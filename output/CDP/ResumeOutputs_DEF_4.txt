@@ -1,0 +1,3 @@
+Instance	betaLS	CostSol	time	Capacity	reliability	variance	stochastic_of	stochastic_capacity	deterministic	type_simulation	inversa	weight	seed
+GKD-b_11_n50_b02_m5.txt	0.3	142.9	0.0	4827.0	0.914	0.2	130.61060000000003	6236.320444508372	False	False	0.0	0.8	23456
+GKD-b_11_n50_b02_m5.txt	0.3	124.8	0	4423.0	0.666	0.2	83.11679999999998	10035.306675597389	False	False	0.0	0.8	764534
