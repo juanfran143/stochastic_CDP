@@ -1,40 +1,56 @@
-import numpy as np
+"""Problem instance definition and loader."""
+
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import List
+
 from objects import Edge
 
+
+@dataclass(slots=True)
 class Instance:
+    """Encapsulates all the data required to evaluate a solution."""
 
-    def __init__(self,path):
-        self.name = ""  # nombre de la instancia
-        self.n = 0  # nodos
-        self.b = 0  # capacidad mínima requerida
-        self.capacity = []  # vector de capacidades
-        self.distance = None  # matriz de distancia
-        self.sortedDistances = []  # lista ordenada de Edge
-        self.readInstance(path)
+    path: str
+    name: str = field(init=False)
+    nodeCount: int = field(init=False, default=0)
+    minCapacity: float = field(init=False, default=0)
+    capacities: List[float] = field(init=False, default_factory=list)
+    distances: List[List[float]] = field(init=False, default_factory=list)
+    sortedEdges: List[Edge] = field(init=False, default_factory=list)
 
+    def __post_init__(self) -> None:
+        self.name = Path(self.path).name
+        self.loadInstance()
 
-    def readInstance(self, s):
-        with open(s) as instance:
-            i = 1
-            fila = 0
-            for line in instance:
-                if line == "\n":
-                    continue
-                if i == 1: #nodos
-                    self.n = int(line)
-                    self.distance = np.zeros((self.n, self.n))
-                elif i == 2: #capacidad
-                    self.b = int(line)
-                elif i == 3: #capacidades nodos
-                    l = line.rstrip('\t\n ')
-                    self.capacity = [float(x) for x in l.split('\t')]
-                else: #matriz distancia
-                    l = line.rstrip('\t\n ')
-                    d= [float(x) for x in l.split('\t')]
-                    for z in range(0,self.n):
-                            if d[z] != 0:
-                                self.distance[fila,z] = d[z]
-                                self.sortedDistances.append(Edge(fila,z,d[z]))
-                    fila+=1
-                i += 1
-        self.sortedDistances.sort(key=lambda x: x.distance, reverse=True) #ordena distancia de mayor a menos
+    def loadInstance(self) -> None:
+        with open(self.path, "r", encoding="utf-8") as handle:
+            lines = [line.strip() for line in handle if line.strip()]
+
+        if len(lines) < 3:
+            raise ValueError("Instance file is incomplete.")
+
+        self.nodeCount = int(lines[0])
+        self.minCapacity = float(lines[1])
+        self.capacities = [float(value) for value in lines[2].split("\t")]
+        if len(self.capacities) != self.nodeCount:
+            raise ValueError("Capacity vector length does not match node count.")
+
+        self.distances = [
+            [0.0 for _ in range(self.nodeCount)] for _ in range(self.nodeCount)
+        ]
+        self.sortedEdges = []
+
+        for rowIndex, rawRow in enumerate(lines[3:]):
+            values = [float(value) for value in rawRow.split("\t")]
+            if len(values) != self.nodeCount:
+                raise ValueError("Distance matrix row length mismatch.")
+            for columnIndex, distance in enumerate(values):
+                if distance:
+                    self.distances[rowIndex][columnIndex] = distance
+                    self.sortedEdges.append(Edge(rowIndex, columnIndex, distance))
+
+        self.sortedEdges.sort(key=lambda edge: edge.distance, reverse=True)
+
