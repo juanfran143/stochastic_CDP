@@ -1,114 +1,113 @@
-import copy
+"""Simulation-based evaluation utilities used by the simheuristic framework."""
 
-import numpy as np
-from ConstructiveHeuristic import *
+from __future__ import annotations
 
-class simheuristic:
+import math
+import random
+from dataclasses import dataclass
+from typing import List, Tuple
 
-    def __init__(self, simulations, variance):
-        self.simulations = simulations
-        self.var = variance
-
-
-    def random_value(self, mean):
-        return np.random.lognormal(np.log(mean), self.var)
-
-    def simulation_1(self, solution: Solution):
-        fail = 0
-        capacity = []
-        solution.stochastic_of["1"] = solution.of # Optimizar
-        for _ in range(self.simulations):
-            stochastic_capacity = 0
-            for node in solution.selected:
-                capacity_node = self.random_value(solution.instance.capacity[node])
-                stochastic_capacity += solution.instance.capacity[node] - (capacity_node - solution.instance.capacity[node])
-
-            if stochastic_capacity < solution.instance.b:
-                fail += 1
-
-            capacity.append(stochastic_capacity)
-
-        solution.reliability["1"] = (self.simulations-fail)/self.simulations
-        solution.total_stochastic_capacity["1"] = np.mean(stochastic_capacity)
-
-    def simulation_2(self, solution: Solution, cl):
-        fail = 0
-
-        capacity = []
-        solution.stochastic_of["2"] = []
-        for _ in range(self.simulations):
-            aux_solution = Solution(solution.instance)
-            aux_solution.of = solution.of
-            aux_solution.of = solution.vMin1
-            aux_solution.of = solution.vMin2
-            of = solution.of
-            stochastic_capacity = 0
-            for node in solution.selected:
-                capacity_node = self.random_value(solution.instance.capacity[node])
-                stochastic_capacity += solution.instance.capacity[node] - (
-                            capacity_node - solution.instance.capacity[node])
-
-            if stochastic_capacity < solution.instance.b:
-                fail += 1
-                #TODO
-                #I have changed it
-                #of = solution.instance.sortedDistances[-1].distance  # Penalitation cost
-                i = 0
-                while stochastic_capacity < solution.instance.b:
-                    v = cl[i].v
-                    stochastic_capacity += solution.instance.capacity[v]
-                    if of > cl[i].dist_min:
-                        #sol.updateOF(c.v, c.closestV, c.dist_min)
-                        of = cl[i].dist_min
-                    aux_solution.updateOF(cl[i].v, cl[i].closestV, cl[i].dist_min)
-                    self.updateCL_capacity(aux_solution, cl, cl[i].v)
-                    i += 1
-                    #c = cl.pop(vWithMaxCap)
-                #of = (solution.instance.sortedDistances[0].distance-solution.instance.sortedDistances[-1].distance)/4
-                stochastic_capacity = sum(solution.instance.capacity)
-
-            #print("OF: "+str(of))
-            capacity.append(stochastic_capacity)
-            solution.stochastic_of["2"].append(of)
-
-        solution.reliability["2"] = (self.simulations - fail) / self.simulations
-        solution.total_stochastic_capacity["2"] = np.mean(capacity)
-        solution.mean_stochastic_of["2"] = np.mean(solution.stochastic_of["2"])
+from Solution import Solution
+from objects import WeightedCandidate
 
 
-    def fast_simulation(self, solution: Solution):
-        fail = 0
-        for _ in range(self.simulations):
-            stochastic_capacity = 0
-            for node in solution.selected:
-                capacity_node = self.random_value(solution.instance.capacity[node])
-                stochastic_capacity += solution.instance.capacity[node] - (
-                            capacity_node - solution.instance.capacity[node])
+@dataclass
+class Simheuristic:
+    """Provides stochastic simulation capabilities for candidate solutions."""
 
-            if stochastic_capacity < solution.instance.b:
-                fail += 1
+    simulationRuns: int
+    variance: float
 
-        p = (self.simulations - fail) / self.simulations
-        variance = ((p*(1-p))/self.simulations)**(1/2)
-        inf = p-1.96*variance
-        sup = p+1.96*self.var
-        return (inf, sup)
+    def random_capacity(self, mean: float) -> float:
+        return random.lognormvariate(math.log(mean), self.variance)
 
+    def run_reliability_simulation(self, solution: Solution) -> None:
+        failures = 0
+        capacities: List[float] = []
+        solution.stochasticObjective[1] = solution.objectiveValue
 
-    def updateCL_capacity(self, sol, cl, lastAdded):
-        instance = sol.instance
-        for c in cl:
-            dToLast = instance.distance[lastAdded][c.v]
-            #cost = dToLast/self.max_min_dist * self.weight + instance.capacity[c.v]/self.max_capacity * (1-self.weight)
-            if dToLast < c.dist_min:
-                c.dist_min = dToLast
-                c.closestV = lastAdded
+        for _ in range(self.simulationRuns):
+            stochasticCapacity = sum(
+                solution.instance.capacities[node] - (self.random_capacity(solution.instance.capacities[node]) - solution.instance.capacities[node])
+                for node in solution.selectedVertices
+            )
 
-        self.max_min_dist = max([x.dist_min for x in cl])
-        for c in cl:
+            if stochasticCapacity < solution.instance.minCapacity:
+                failures += 1
+            capacities.append(stochasticCapacity)
 
-            if self.max_min_dist != 0:
-                c.cost = c.dist_min / self.max_min_dist * 0.8 + instance.capacity[c.v] / max(instance.capacity) * (1 - 0.8)
-            else:
-                c.cost = instance.capacity[c.v] / max(instance.capacity) * (1 - 0.8)
-        cl.sort(key=lambda x: x.cost, reverse=True)  # ordena distancia de mayor a menos
+        solution.reliability[1] = (self.simulationRuns - failures) / self.simulationRuns
+        solution.stochasticCapacity[1] = float(sum(capacities) / len(capacities)) if capacities else 0.0
+
+    def run_stochastic_evaluation(self, solution: Solution, candidateList: List[WeightedCandidate]) -> None:
+        failures = 0
+        capacities: List[float] = []
+        solution.stochasticObjective[2] = []
+
+        for _ in range(self.simulationRuns):
+            auxSolution = solution.copy()
+            stochasticCapacity = sum(
+                solution.instance.capacities[node] - (self.random_capacity(solution.instance.capacities[node]) - solution.instance.capacities[node])
+                for node in solution.selectedVertices
+            )
+
+            if stochasticCapacity < solution.instance.minCapacity:
+                failures += 1
+                index = 0
+                while stochasticCapacity < solution.instance.minCapacity and index < len(candidateList):
+                    candidate = candidateList[index]
+                    stochasticCapacity += solution.instance.capacities[candidate.vertex]
+                    if auxSolution.objectiveValue > candidate.distance:
+                        auxSolution.update_objective(candidate.vertex, candidate.nearestVertex, candidate.distance)
+                    self.update_weighted_candidate_list(auxSolution, candidateList, candidate.vertex)
+                    index += 1
+                stochasticCapacity = sum(solution.instance.capacities)
+
+            capacities.append(stochasticCapacity)
+            solution.stochasticObjective[2].append(auxSolution.objectiveValue)
+
+        solution.reliability[2] = (self.simulationRuns - failures) / self.simulationRuns
+        solution.stochasticCapacity[2] = (
+            float(sum(capacities) / len(capacities)) if capacities else 0.0
+        )
+        values = solution.stochasticObjective[2]
+        solution.meanStochasticObjective[2] = (
+            float(sum(values) / len(values)) if values else 0.0
+        )
+
+    def run_fast_simulation(self, solution: Solution) -> Tuple[float, float]:
+        failures = 0
+        for _ in range(self.simulationRuns):
+            stochasticCapacity = sum(
+                solution.instance.capacities[node] - (self.random_capacity(solution.instance.capacities[node]) - solution.instance.capacities[node])
+                for node in solution.selectedVertices
+            )
+            if stochasticCapacity < solution.instance.minCapacity:
+                failures += 1
+
+        probability = (self.simulationRuns - failures) / self.simulationRuns
+        variance = ((probability * (1 - probability)) / self.simulationRuns) ** 0.5
+        lowerBound = probability - 1.96 * variance
+        upperBound = probability + 1.96 * variance
+        return lowerBound, upperBound
+
+    def update_weighted_candidate_list(
+        self, solution: Solution, candidateList: List[WeightedCandidate], lastVertex: int
+    ) -> None:
+        maxDistance = 1.0
+        for candidate in candidateList:
+            distance = solution.instance.distances[lastVertex][candidate.vertex]
+            if distance < candidate.distance:
+                candidate.distance = distance
+                candidate.nearestVertex = lastVertex
+            maxDistance = max(maxDistance, candidate.distance)
+
+        maxCapacity = max((solution.instance.capacities[v] for v in solution.selectedVertices), default=1.0)
+
+        for candidate in candidateList:
+            distanceComponent = candidate.distance / maxDistance if maxDistance else 0.0
+            capacityComponent = solution.instance.capacities[candidate.vertex] / maxCapacity if maxCapacity else 0.0
+            candidate.score = distanceComponent * 0.8 + capacityComponent * 0.2
+
+        candidateList.sort(key=lambda element: element.score, reverse=True)
+
