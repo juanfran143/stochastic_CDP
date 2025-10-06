@@ -1,378 +1,330 @@
+"""Constructive heuristics used by the multi-start framework."""
+
+from __future__ import annotations
+
 import math
-from Solution import Solution
-from objects import Candidate, Candidate_capacity
 import random
+from typing import Dict, List, Optional, Tuple
+
+from Instance import Instance
+from Solution import Solution
+from objects import Candidate, WeightedCandidate
 
 
 class ConstructiveHeuristic:
-    def __init__(self,alpha,beta,betaLS,inst, weight):
+    """Generates initial solutions and supports local search adjustments."""
+
+    def __init__(
+        self,
+        alpha: float,
+        betaConstruction: float,
+        betaLocalSearch: float,
+        instance: Instance,
+        weight: float,
+    ) -> None:
         self.alpha = alpha
-        self.firstEdge = 0
-        self.beta = beta
-        self.betaLS = betaLS
-        self.instance = inst
+        self.beta = betaConstruction
+        self.betaLocalSearch = betaLocalSearch
+        self.instance = instance
+        self.configuredWeight: Optional[float] = weight if 0.0 <= weight <= 1.0 else None
+        self.weight = self.configuredWeight if self.configuredWeight is not None else weight
+        self.firstEdgeIndex = 0
+        self.maxMinDistance = 1.0
+        self.maxCapacity = max(instance.capacities)
 
-        self.weight = weight
+    # ------------------------------------------------------------------
+    # Construction helpers
+    # ------------------------------------------------------------------
+    def initialSolution(self) -> Solution:
+        solution = Solution(self.instance)
+        edge = self.instance.sortedEdges[self.firstEdgeIndex]
+        solution.addVertex(edge.vertex1)
+        solution.addVertex(edge.vertex2)
+        solution.updateObjective(edge.vertex1, edge.vertex2, edge.distance)
+        self.maxCapacity = max(
+            self.instance.capacities[edge.vertex1],
+            self.instance.capacities[edge.vertex2],
+        )
+        self.maxMinDistance = edge.distance
+        return solution
 
+    def weightedScore(self, distance: float, capacity: float) -> float:
+        distanceComponent = distance / self.maxMinDistance if self.maxMinDistance else 0.0
+        capacityComponent = capacity / self.maxCapacity if self.maxCapacity else 0.0
+        return distanceComponent * self.weight + capacityComponent * (1 - self.weight)
 
-    #original Grasp Heuristic
-    #Constructive heuristic (Deterministic Version)
-    def constructSolution(self):
-        sol = Solution(self.instance)
-        edge = self.instance.sortedDistances[self.firstEdge]
-        sol.add(edge.v1)
-        sol.add(edge.v2)
-        sol.updateOF(edge.v1, edge.v2, edge.distance)
-        cl = self.createCL(sol)
-        realAlpha = self.alpha if self.alpha >= 0 else random.random()
-        while(not sol.isFeasible()):
-            distanceLimit = cl[0].cost - (realAlpha * cl[len(cl)-1].cost)
-            i = 0
-            maxCap = 0
-            vWithMaxCap = -1
-            while i < len(cl) and (cl[i].cost >= distanceLimit):
-                v = cl[i].v
-                vCap = self.instance.capacity[v]
-                if vCap > maxCap:
-                    maxCap = vCap
-                    vWithMaxCap = i
-                i+=1
-            c = cl.pop(vWithMaxCap)
-            sol.add(c.v)
-
-            if c.cost < sol.of:
-                sol.updateOF(c.v, c.closestV, c.cost)
-
-            # Debug
-            #if sol.getEvalComplete() != sol.of:
-            #    print("MAL: " + str(sol.getEvalComplete()) + " vs " + str(sol.of))
-
-            self.updateCL(sol, cl, c.v)
-        return sol
-
-
-
-    def constructSolution_capacity(self, weight):
-        sol = Solution(self.instance)
-        edge = self.instance.sortedDistances[self.firstEdge]
-        sol.add(edge.v1)
-        sol.add(edge.v2)
-        sol.updateOF(edge.v1, edge.v2, edge.distance)
-        self.weight = weight
-        cl = self.createCL_capacity(sol)
-        realAlpha = self.alpha if self.alpha >= 0 else random.random()
-        while(not sol.isFeasible()):
-            distanceLimit = cl[0].cost - (realAlpha * cl[len(cl)-1].cost)
-            i = 0
-            maxCap = 0
-            vWithMaxCap = -1
-            while i < len(cl) and (cl[i].cost >= distanceLimit):
-                v = cl[i].v
-                vCap = self.instance.capacity[v]
-                if vCap > maxCap:
-                    maxCap = vCap
-                    vWithMaxCap = i
-                i+=1
-            c = cl.pop(vWithMaxCap)
-            sol.add(c.v)
-
-            if c.dist_min < sol.of:
-                sol.updateOF(c.v, c.closestV, c.dist_min)
-
-            self.updateCL_capacity(sol, cl, c.v)
-        return sol
-
-
-    #BR-Heuristic
-    def constructBRSol(self):
-        sol = Solution(self.instance)
-        pos = self.getRandomPosition(len(self.instance.sortedDistances), random, self.beta)
-        edge = self.instance.sortedDistances[pos]
-        sol.add(edge.v1)
-        sol.add(edge.v2)
-        sol.updateOF(edge.v1, edge.v2, edge.distance)
-        cl = self.createCL(sol)
-        while(not sol.isFeasible()):
-            pos = self.getRandomPosition(len(cl), random, self.beta)
-            v = cl[pos].v
-            c = cl.pop(pos)
-            sol.add(c.v)
-
-            if c.cost < sol.of:
-                sol.updateOF(c.v, c.closestV, c.cost)
-
-            self.updateCL(sol, cl, c.v)
-        return sol, cl
-
-    def constructBRSol_capacity(self):
-        sol = Solution(self.instance)
-        pos = self.getRandomPosition(len(self.instance.sortedDistances), random, self.beta)
-        edge = self.instance.sortedDistances[pos]
-        sol.add(edge.v1)
-        sol.add(edge.v2)
-        sol.updateOF(edge.v1, edge.v2, edge.distance)
-        self.weight = random.uniform(0.6, 0.9)  # Random entre 0.8 y 0.9
-        cl = self.createCL_capacity(sol)
-        while (not sol.isFeasible()):
-            pos = self.getRandomPosition(len(cl), random, self.beta)
-            v = cl[pos].v
-            c = cl.pop(pos)
-            sol.add(c.v)
-            if self.max_capacity < self.instance.capacity[c.v]:
-                self.max_capacity = self.instance.capacity[c.v]
-            if c.dist_min < sol.of:
-                sol.updateOF(c.v, c.closestV, c.dist_min)
-
-            self.updateCL_capacity(sol, cl, c.v)
-        return sol, cl
-
-    def constructBRSol_capacity_simulation(self, simulation, delta):
-        sol = Solution(self.instance)
-        pos = self.getRandomPosition(len(self.instance.sortedDistances), random, self.beta)
-        edge = self.instance.sortedDistances[pos]
-        sol.add(edge.v1)
-        sol.add(edge.v2)
-        sol.updateOF(edge.v1, edge.v2, edge.distance)
-        self.weight = random.uniform(0.6, 0.9)  # Random entre 0.6 y 0.9
-        cl = self.createCL_capacity(sol)
-
-        lower, upper = simulation.fast_simulation(sol)
-
-        while(lower < delta):
-            pos = self.getRandomPosition(len(cl), random, self.beta)
-            v = cl[pos].v
-            c = cl.pop(pos)
-            sol.add(c.v)
-            if self.max_capacity < self.instance.capacity[c.v]:
-                self.max_capacity = self.instance.capacity[c.v]
-            if c.dist_min < sol.of:
-                sol.updateOF(c.v, c.closestV, c.dist_min)
-
-            self.updateCL_capacity(sol, cl, c.v)
-            lower, upper = simulation.fast_simulation(sol)
-        return sol, cl
-
-    def constructBRSol_capacity_given_weight(self, weight):
-        sol = Solution(self.instance)
-        pos = self.getRandomPosition(len(self.instance.sortedDistances), random, self.beta)
-        edge = self.instance.sortedDistances[pos]
-        sol.add(edge.v1)
-        sol.add(edge.v2)
-        sol.updateOF(edge.v1, edge.v2, edge.distance)
-        self.weight = weight
-        cl = self.createCL_capacity(sol)
-        while(not sol.isFeasible()):
-            pos = self.getRandomPosition(len(cl), random, self.beta)
-            v = cl[pos].v
-            c = cl.pop(pos)
-            sol.add(c.v)
-            if self.max_capacity < self.instance.capacity[c.v]:
-                self.max_capacity = self.instance.capacity[c.v]
-            if c.dist_min < sol.of:
-                sol.updateOF(c.v, c.closestV, c.dist_min)
-
-            self.updateCL_capacity(sol, cl, c.v)
-        return sol, cl
-
-    def constructBRSol_capacity_ajusted(self, ajusted):
-        sol = Solution(self.instance)
-        pos = self.getRandomPosition(len(self.instance.sortedDistances), random, self.beta)
-        edge = self.instance.sortedDistances[pos]
-        sol.add(edge.v1)
-        sol.add(edge.v2)
-        sol.updateOF(edge.v1, edge.v2, edge.distance)
-
-        random_number = random.random()
-        before = 0
-        selected = list(ajusted.keys())[-1]
-        for i in ajusted.items():
-            if random_number <= i[1] + before:
-                selected = i[0]
-                break
-            else:
-                before += i[1]
-
-
-        self.weight = random.uniform(selected[0], selected[1])  # Random entre 0.8 y 0.9
-        cl = self.createCL_capacity(sol)
-        while(not sol.isFeasible()):
-            pos = self.getRandomPosition(len(cl), random, self.beta)
-            v = cl[pos].v
-            c = cl.pop(pos)
-            sol.add(c.v)
-            if self.max_capacity < self.instance.capacity[c.v]:
-                self.max_capacity = self.instance.capacity[c.v]
-            if c.dist_min < sol.of:
-                sol.updateOF(c.v, c.closestV, c.dist_min)
-
-            self.updateCL_capacity(sol, cl, c.v)
-        return sol, cl, selected
-
-
-
-    def createCL(self, sol):
-        instance = sol.instance
-        n = instance.n
-        cl = [] #Candidate List of nodes
-        for v in range(0,n):
-            if v in sol.selected:
-                continue
-            vMin, minDist = sol.distanceTo(v)
-            c = Candidate(v, vMin, minDist)
-            cl.append(c)
-        cl.sort(key=lambda x: x.cost, reverse=True)  # ordena distancia de mayor a menos
-        return cl
-
-    def createCL_capacity(self, sol):
-        instance = sol.instance
-        n = instance.n
-        cl = [] #Candidate List of nodes
-        nodes = []
-        capacity = []
-        for v in range(0,n):
-            if v in sol.selected:
-                capacity.append(instance.capacity[v])
-                continue
-            vMin, minDist = sol.distanceTo(v)
-            #cost = minDist / self.max_min_dist * self.weight + instance.capacity[v] / self.max_capacity * (
-            #            1 - self.weight)
-            c = Candidate(v, vMin, minDist)
-            nodes.append(c)
-
-        self.max_min_dist = max([x.cost for x in nodes])
-        self.max_capacity = max(capacity)
-
-        for i in nodes:
-            cost = i.cost / self.max_min_dist * self.weight + instance.capacity[i.v] / self.max_capacity * (1 - self.weight)
-            c = Candidate_capacity(i.v, i.closestV, i.cost, cost)
-            cl.append(c)
-        cl.sort(key=lambda x: x.cost, reverse=True)  # ordena distancia de mayor a menos
-
-        return cl
-
-
-    def insertNodeToCL(self,cl,sol,v):
-        vMin, minDist = sol.distanceTo(v)
-        c = Candidate(v, vMin, minDist)
-        cl.append(c)
-        cl.sort(key=lambda x: x.cost, reverse=True)  # ordena distancia de mayor a menos
-        return cl
-
-    def insertNodeToCL_capacity(self,cl,sol,v):
-        capacity_v = self.instance.capacity[v]
-        if self.max_capacity < capacity_v:
-            self.max_capacity = capacity_v
-
-        vMin, minDist = sol.distanceTo(v)
-
-        if self.max_min_dist < minDist:
-            self.max_min_dist = minDist
-
-        if self.max_min_dist!= 0:
-            cost = minDist / self.max_min_dist * self.weight + capacity_v / self.max_capacity * (1 - self.weight)
+    def applyConfiguredWeight(self, lower: float = 0.6, upper: float = 0.9) -> None:
+        if self.configuredWeight is not None:
+            self.weight = self.configuredWeight
         else:
-            cost = capacity_v / self.max_capacity * (1 - self.weight)
+            self.weight = random.uniform(lower, upper)
 
-        c = Candidate_capacity(v, vMin, minDist, cost)
-        cl.append(c)
-        cl.sort(key=lambda x: x.cost, reverse=True)  # ordena distancia de mayor a menos
-        return cl
+    def buildCandidateList(self, solution: Solution) -> List[Candidate]:
+        candidates: List[Candidate] = []
+        for vertex in range(self.instance.nodeCount):
+            if vertex in solution.selectedVertices:
+                continue
+            nearestVertex, distance = solution.distanceTo(vertex)
+            candidates.append(Candidate(vertex, nearestVertex, distance))
+        candidates.sort(key=lambda item: item.distance, reverse=True)
+        return candidates
 
-    #Used in the LS to include new nodes in the solution
-    def partialReconstruction(self,sol,cl):
-        while (not sol.isFeasible()):
-            pos = self.getRandomPosition(len(cl), random,self.betaLS)
-            c = cl.pop(pos)
-            sol.add(c.v)
-            self.updateCL(sol, cl, c.v)
-        return sol
+    def buildWeightedCandidateList(self, solution: Solution) -> List[WeightedCandidate]:
+        weightedCandidates: List[WeightedCandidate] = []
+        selectedCapacities = [self.instance.capacities[v] for v in solution.selectedVertices]
+        self.maxCapacity = max(selectedCapacities) if selectedCapacities else max(self.instance.capacities)
+
+        candidates: List[Candidate] = []
+        for vertex in range(self.instance.nodeCount):
+            if vertex in solution.selectedVertices:
+                continue
+            nearestVertex, distance = solution.distanceTo(vertex)
+            candidates.append(Candidate(vertex, nearestVertex, distance))
+
+        self.maxMinDistance = max((candidate.distance for candidate in candidates), default=1.0)
+
+        for candidate in candidates:
+            score = self.weightedScore(candidate.distance, self.instance.capacities[candidate.vertex])
+            weightedCandidates.append(
+                WeightedCandidate(candidate.vertex, candidate.nearestVertex, candidate.distance, score)
+            )
+
+        weightedCandidates.sort(key=lambda candidate: candidate.score, reverse=True)
+        return weightedCandidates
+
+    def randomIndex(self, size: int, beta: float) -> int:
+        position = int(math.log(random.random()) / math.log(1 - beta))
+        return position % size if size else 0
+
+    # ------------------------------------------------------------------
+    # Deterministic constructions
+    # ------------------------------------------------------------------
+    def constructGreedySolution(self) -> Solution:
+        solution = self.initialSolution()
+        candidateList = self.buildCandidateList(solution)
+        alpha = self.alpha if self.alpha >= 0 else random.random()
+        while not solution.isFeasible():
+            limit = candidateList[0].distance - (alpha * candidateList[-1].distance)
+            bestIndex = max(
+                range(len(candidateList)),
+                key=lambda index: (
+                    candidateList[index].distance >= limit,
+                    self.instance.capacities[candidateList[index].vertex],
+                ),
+            )
+            candidate = candidateList.pop(bestIndex)
+            solution.addVertex(candidate.vertex)
+            if candidate.distance < solution.objectiveValue:
+                solution.updateObjective(candidate.vertex, candidate.nearestVertex, candidate.distance)
+            self.updateCandidateList(solution, candidateList, candidate.vertex)
+        return solution
+
+    # ------------------------------------------------------------------
+    # Biased randomized constructions
+    # ------------------------------------------------------------------
+    def constructBiasedSolution(self) -> Tuple[Solution, List[Candidate]]:
+        solution = self.initialSolution()
+        candidateList = self.buildCandidateList(solution)
+        while not solution.isFeasible():
+            position = self.randomIndex(len(candidateList), self.beta)
+            candidate = candidateList.pop(position)
+            solution.addVertex(candidate.vertex)
+            if candidate.distance < solution.objectiveValue:
+                solution.updateObjective(candidate.vertex, candidate.nearestVertex, candidate.distance)
+            self.updateCandidateList(solution, candidateList, candidate.vertex)
+        return solution, candidateList
+
+    def constructBiasedCapacitySolution(self) -> Tuple[Solution, List[WeightedCandidate]]:
+        solution = self.initialSolution()
+        self.applyConfiguredWeight(0.6, 0.9)
+        candidateList = self.buildWeightedCandidateList(solution)
+
+        while not solution.isFeasible():
+            position = self.randomIndex(len(candidateList), self.beta)
+            candidate = candidateList.pop(position)
+            solution.addVertex(candidate.vertex)
+            self.maxCapacity = max(self.maxCapacity, self.instance.capacities[candidate.vertex])
+            if candidate.distance < solution.objectiveValue:
+                solution.updateObjective(candidate.vertex, candidate.nearestVertex, candidate.distance)
+            self.updateWeightedCandidateList(solution, candidateList, candidate.vertex)
+        return solution, candidateList
+
+    def constructBiasedCapacitySimulationSolution(
+        self,
+        simulation: "Simheuristic",
+        reliabilityThreshold: float,
+    ) -> Tuple[Solution, List[WeightedCandidate]]:
+        solution = self.initialSolution()
+        self.applyConfiguredWeight(0.6, 0.9)
+        candidateList = self.buildWeightedCandidateList(solution)
+
+        lowerBound, _ = simulation.runFastSimulation(solution)
+        while lowerBound < reliabilityThreshold:
+            position = self.randomIndex(len(candidateList), self.beta)
+            candidate = candidateList.pop(position)
+            solution.addVertex(candidate.vertex)
+            self.maxCapacity = max(self.maxCapacity, self.instance.capacities[candidate.vertex])
+            if candidate.distance < solution.objectiveValue:
+                solution.updateObjective(candidate.vertex, candidate.nearestVertex, candidate.distance)
+            self.updateWeightedCandidateList(solution, candidateList, candidate.vertex)
+            lowerBound, _ = simulation.runFastSimulation(solution)
+        return solution, candidateList
+
+    def constructBiasedFixedWeightSolution(self, weight: float) -> Tuple[Solution, List[WeightedCandidate]]:
+        solution = self.initialSolution()
+        self.weight = weight
+        candidateList = self.buildWeightedCandidateList(solution)
+
+        while not solution.isFeasible():
+            position = self.randomIndex(len(candidateList), self.beta)
+            candidate = candidateList.pop(position)
+            solution.addVertex(candidate.vertex)
+            self.maxCapacity = max(self.maxCapacity, self.instance.capacities[candidate.vertex])
+            if candidate.distance < solution.objectiveValue:
+                solution.updateObjective(candidate.vertex, candidate.nearestVertex, candidate.distance)
+            self.updateWeightedCandidateList(solution, candidateList, candidate.vertex)
+        return solution, candidateList
+
+    def constructBiasedDistributionSolution(
+        self, distribution: Dict[Tuple[float, float], float]
+    ) -> Tuple[Solution, List[WeightedCandidate], Tuple[float, float]]:
+        solution = self.initialSolution()
+
+        randomValue = random.random()
+        cumulative = 0.0
+        selectedInterval = next(reversed(distribution))
+        for interval, probability in distribution.items():
+            cumulative += probability
+            if randomValue <= cumulative:
+                selectedInterval = interval
+                break
+
+        lower, upper = selectedInterval
+        if self.configuredWeight is not None:
+            self.weight = self.configuredWeight
+        else:
+            self.weight = random.uniform(lower, upper if upper <= 1 else 1)
+        candidateList = self.buildWeightedCandidateList(solution)
+
+        while not solution.isFeasible():
+            position = self.randomIndex(len(candidateList), self.beta)
+            candidate = candidateList.pop(position)
+            solution.addVertex(candidate.vertex)
+            self.maxCapacity = max(self.maxCapacity, self.instance.capacities[candidate.vertex])
+            if candidate.distance < solution.objectiveValue:
+                solution.updateObjective(candidate.vertex, candidate.nearestVertex, candidate.distance)
+            self.updateWeightedCandidateList(solution, candidateList, candidate.vertex)
+        return solution, candidateList, selectedInterval
+
+    # ------------------------------------------------------------------
+    # Candidate list maintenance
+    # ------------------------------------------------------------------
+    def updateCandidateList(self, solution: Solution, candidateList: List[Candidate], lastVertex: int) -> None:
+        for candidate in candidateList:
+            distance = self.instance.distances[lastVertex][candidate.vertex]
+            if distance < candidate.distance:
+                candidate.distance = distance
+                candidate.nearestVertex = lastVertex
+        candidateList.sort(key=lambda item: item.distance, reverse=True)
+
+    def updateWeightedCandidateList(
+        self, solution: Solution, candidateList: List[WeightedCandidate], lastVertex: int
+    ) -> None:
+        for candidate in candidateList:
+            distance = self.instance.distances[lastVertex][candidate.vertex]
+            if distance < candidate.distance:
+                candidate.distance = distance
+                candidate.nearestVertex = lastVertex
+        self.maxMinDistance = max((candidate.distance for candidate in candidateList), default=1.0)
+        for candidate in candidateList:
+            candidate.score = self.weightedScore(
+                candidate.distance, self.instance.capacities[candidate.vertex]
+            )
+        candidateList.sort(key=lambda item: item.score, reverse=True)
+
+    def insertCandidate(self, candidateList: List[Candidate], solution: Solution, vertex: int) -> None:
+        nearestVertex, distance = solution.distanceTo(vertex)
+        candidateList.append(Candidate(vertex, nearestVertex, distance))
+        candidateList.sort(key=lambda item: item.distance, reverse=True)
+
+    def insertWeightedCandidate(
+        self, candidateList: List[WeightedCandidate], solution: Solution, vertex: int
+    ) -> None:
+        nearestVertex, distance = solution.distanceTo(vertex)
+        self.maxCapacity = max(self.maxCapacity, self.instance.capacities[vertex])
+        self.maxMinDistance = max(self.maxMinDistance, distance)
+        score = self.weightedScore(distance, self.instance.capacities[vertex])
+        candidateList.append(WeightedCandidate(vertex, nearestVertex, distance, score))
+        candidateList.sort(key=lambda item: item.score, reverse=True)
+
+    def recalculateCandidateList(
+        self, solution: Solution, candidateList: List[Candidate], removedVertex: int
+    ) -> None:
+        for candidate in candidateList:
+            if candidate.nearestVertex == removedVertex:
+                candidate.nearestVertex, candidate.distance = solution.distanceTo(candidate.vertex)
+        candidateList.sort(key=lambda item: item.distance, reverse=True)
+
+    def recalculateWeightedCandidateList(
+        self, solution: Solution, candidateList: List[WeightedCandidate], removedVertex: int
+    ) -> None:
+        for candidate in candidateList:
+            if candidate.nearestVertex == removedVertex:
+                candidate.nearestVertex, candidate.distance = solution.distanceTo(candidate.vertex)
+
+        selectedCapacities = [self.instance.capacities[v] for v in solution.selectedVertices]
+        self.maxCapacity = max(selectedCapacities) if selectedCapacities else max(self.instance.capacities)
+        self.maxMinDistance = max((candidate.distance for candidate in candidateList), default=1.0)
+
+        for candidate in candidateList:
+            candidate.score = self.weightedScore(
+                candidate.distance, self.instance.capacities[candidate.vertex]
+            )
+        candidateList.sort(key=lambda item: item.score, reverse=True)
+
+    # ------------------------------------------------------------------
+    # Partial reconstructions for tabu search
+    # ------------------------------------------------------------------
+    def partialReconstruction(self, solution: Solution, candidateList: List[Candidate]) -> Solution:
+        while not solution.isFeasible():
+            index = self.randomIndex(len(candidateList), self.betaLocalSearch)
+            candidate = candidateList.pop(index)
+            solution.addVertex(candidate.vertex)
+            self.updateCandidateList(solution, candidateList, candidate.vertex)
+        return solution
+
+    def partialReconstructionCapacity(
+        self, solution: Solution, candidateList: List[WeightedCandidate]
+    ) -> Solution:
+        while not solution.isFeasible():
+            index = self.randomIndex(len(candidateList), self.betaLocalSearch)
+            candidate = candidateList.pop(index)
+            solution.addVertex(candidate.vertex)
+            self.maxCapacity = max(self.maxCapacity, self.instance.capacities[candidate.vertex])
+            self.updateWeightedCandidateList(solution, candidateList, candidate.vertex)
+        return solution
+
+    def partialReconstructionSimulation(
+        self,
+        solution: Solution,
+        candidateList: List[WeightedCandidate],
+        simulation: "Simheuristic",
+        reliabilityThreshold: float,
+    ) -> Solution:
+        lowerBound, _ = simulation.runFastSimulation(solution)
+        while lowerBound < reliabilityThreshold:
+            index = self.randomIndex(len(candidateList), self.betaLocalSearch)
+            candidate = candidateList.pop(index)
+            solution.addVertex(candidate.vertex)
+            self.maxCapacity = max(self.maxCapacity, self.instance.capacities[candidate.vertex])
+            self.updateWeightedCandidateList(solution, candidateList, candidate.vertex)
+            lowerBound, _ = simulation.runFastSimulation(solution)
+        return solution
 
 
-    def partialReconstruction_capacity(self,sol,cl):
+# Avoid circular imports at module level
+from typing import TYPE_CHECKING
 
-        while (not sol.isFeasible()):
-            pos = self.getRandomPosition(len(cl), random, self.betaLS)
-            c = cl.pop(pos)
-            sol.add(c.v)
-            self.updateCL_capacity(sol, cl, c.v)
-        return sol
+if TYPE_CHECKING:  # pragma: no cover
+    from simheuristic import Simheuristic
 
-
-    def partialReconstruction_capacity_simulation(self,sol,cl, simulation, delta):
-        lower, upper = simulation.fast_simulation(sol)
-        while lower < delta:
-            pos = self.getRandomPosition(len(cl), random, self.betaLS)
-            c = cl.pop(pos)
-            sol.add(c.v)
-            self.updateCL_capacity(sol, cl, c.v)
-            lower, upper = simulation.fast_simulation(sol)
-        return sol
-
-
-    def updateCL(self,sol,cl,lastAdded):
-        instance = sol.instance
-        for c in cl:
-            dToLast = instance.distance[lastAdded][c.v]
-            if dToLast < c.cost:
-                c.cost = dToLast
-                c.closestV = lastAdded
-        cl.sort(key=lambda x: x.cost, reverse=True)  # ordena distancia de mayor a menos
-
-    def updateCL_capacity(self, sol, cl, lastAdded):
-        instance = sol.instance
-        for c in cl:
-            dToLast = instance.distance[lastAdded][c.v]
-            #cost = dToLast/self.max_min_dist * self.weight + instance.capacity[c.v]/self.max_capacity * (1-self.weight)
-            if dToLast < c.dist_min:
-                c.dist_min = dToLast
-                c.closestV = lastAdded
-
-        self.max_min_dist = max([x.dist_min for x in cl])
-        for c in cl:
-
-            if self.max_min_dist != 0:
-                c.cost = c.dist_min / self.max_min_dist * self.weight + instance.capacity[c.v] / self.max_capacity * (1 - self.weight)
-            else:
-                c.cost = instance.capacity[c.v] / self.max_capacity * (1 - self.weight)
-        cl.sort(key=lambda x: x.cost, reverse=True)  # ordena distancia de mayor a menos
-
-
-
-
-    def recalculateCL(self,sol,cl,lastDrop):
-        instance = sol.instance
-        for c in cl:
-            if lastDrop == c.closestV:
-                vMin, minDist = sol.distanceTo(c.v)
-                c.cost = minDist
-                c.closestV = vMin
-        cl.sort(key=lambda x: x.cost, reverse=True)  # ordena distancia de mayor a menos
-
-
-    def recalculateCL_capacity(self,sol,cl,lastDrop):
-        instance = sol.instance
-        for c in cl:
-            if lastDrop == c.closestV:
-                vMin, minDist = sol.distanceTo(c.v)
-                c.dist_min = minDist
-                c.closestV = vMin
-
-        self.max_min_dist = max([x.dist_min for x in cl])
-        if self.max_capacity == instance.capacity[lastDrop]:
-            self.max_capacity = max([instance.capacity[i] for i in sol.selected])
-
-        for c in cl:
-            if self.max_min_dist != 0:
-                c.cost = c.dist_min / self.max_min_dist * self.weight + instance.capacity[c.v] / self.max_capacity * (
-                    1 - self.weight)
-            else:
-                c.cost = instance.capacity[c.v] / self.max_capacity * (1 - self.weight)
-        cl.sort(key=lambda x: x.cost, reverse=True)  # ordena distancia de mayor a menos
-
-
-
-
-    def getRandomPosition(self,size, random,beta):
-        index = int(math.log(random.random()) / math.log(1 - beta))
-        index = index % size
-        return index
