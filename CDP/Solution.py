@@ -42,15 +42,15 @@ class Solution:
         clone.meanStochasticObjective = dict(self.meanStochasticObjective)
         return clone
 
-    def addVertex(self, vertex: int) -> None:
+    def add_vertex(self, vertex: int) -> None:
         self.selectedVertices.append(vertex)
         self.capacity += self.instance.capacities[vertex]
 
-    def removeVertex(self, vertex: int) -> None:
+    def remove_vertex(self, vertex: int) -> None:
         self.selectedVertices.remove(vertex)
         self.capacity -= self.instance.capacities[vertex]
 
-    def distanceTo(self, vertex: int) -> Tuple[int, float]:
+    def distance_to(self, vertex: int) -> Tuple[int, float]:
         minDistance = self.instance.sortedEdges[0].distance * 10
         minVertex = -1
         for selected in self.selectedVertices:
@@ -60,15 +60,15 @@ class Solution:
                 minVertex = selected
         return minVertex, minDistance
 
-    def isFeasible(self) -> bool:
+    def is_feasible(self) -> bool:
         return self.capacity >= self.instance.minCapacity
 
-    def updateObjective(self, vertex1: int, vertex2: int, distance: float) -> None:
+    def update_objective(self, vertex1: int, vertex2: int, distance: float) -> None:
         self.objectiveValue = distance
         self.minDistanceVertex1 = vertex1
         self.minDistanceVertex2 = vertex2
 
-    def evaluateComplete(self) -> float:
+    def evaluate_complete(self) -> float:
         self.objectiveValue = self.instance.sortedEdges[0].distance * 10
         for vertex1 in self.selectedVertices:
             for vertex2 in self.selectedVertices:

@@ -18,17 +18,17 @@ class Simheuristic:
     simulationRuns: int
     variance: float
 
-    def randomCapacity(self, mean: float) -> float:
+    def random_capacity(self, mean: float) -> float:
         return random.lognormvariate(math.log(mean), self.variance)
 
-    def runReliabilitySimulation(self, solution: Solution) -> None:
+    def run_reliability_simulation(self, solution: Solution) -> None:
         failures = 0
         capacities: List[float] = []
         solution.stochasticObjective[1] = solution.objectiveValue
 
         for _ in range(self.simulationRuns):
             stochasticCapacity = sum(
-                solution.instance.capacities[node] - (self.randomCapacity(solution.instance.capacities[node]) - solution.instance.capacities[node])
+                solution.instance.capacities[node] - (self.random_capacity(solution.instance.capacities[node]) - solution.instance.capacities[node])
                 for node in solution.selectedVertices
             )
 
@@ -39,7 +39,7 @@ class Simheuristic:
         solution.reliability[1] = (self.simulationRuns - failures) / self.simulationRuns
         solution.stochasticCapacity[1] = float(sum(capacities) / len(capacities)) if capacities else 0.0
 
-    def runStochasticEvaluation(self, solution: Solution, candidateList: List[WeightedCandidate]) -> None:
+    def run_stochastic_evaluation(self, solution: Solution, candidateList: List[WeightedCandidate]) -> None:
         failures = 0
         capacities: List[float] = []
         solution.stochasticObjective[2] = []
@@ -47,7 +47,7 @@ class Simheuristic:
         for _ in range(self.simulationRuns):
             auxSolution = solution.copy()
             stochasticCapacity = sum(
-                solution.instance.capacities[node] - (self.randomCapacity(solution.instance.capacities[node]) - solution.instance.capacities[node])
+                solution.instance.capacities[node] - (self.random_capacity(solution.instance.capacities[node]) - solution.instance.capacities[node])
                 for node in solution.selectedVertices
             )
 
@@ -58,8 +58,8 @@ class Simheuristic:
                     candidate = candidateList[index]
                     stochasticCapacity += solution.instance.capacities[candidate.vertex]
                     if auxSolution.objectiveValue > candidate.distance:
-                        auxSolution.updateObjective(candidate.vertex, candidate.nearestVertex, candidate.distance)
-                    self.updateWeightedCandidateList(auxSolution, candidateList, candidate.vertex)
+                        auxSolution.update_objective(candidate.vertex, candidate.nearestVertex, candidate.distance)
+                    self.update_weighted_candidate_list(auxSolution, candidateList, candidate.vertex)
                     index += 1
                 stochasticCapacity = sum(solution.instance.capacities)
 
@@ -75,11 +75,11 @@ class Simheuristic:
             float(sum(values) / len(values)) if values else 0.0
         )
 
-    def runFastSimulation(self, solution: Solution) -> Tuple[float, float]:
+    def run_fast_simulation(self, solution: Solution) -> Tuple[float, float]:
         failures = 0
         for _ in range(self.simulationRuns):
             stochasticCapacity = sum(
-                solution.instance.capacities[node] - (self.randomCapacity(solution.instance.capacities[node]) - solution.instance.capacities[node])
+                solution.instance.capacities[node] - (self.random_capacity(solution.instance.capacities[node]) - solution.instance.capacities[node])
                 for node in solution.selectedVertices
             )
             if stochasticCapacity < solution.instance.minCapacity:
@@ -91,7 +91,7 @@ class Simheuristic:
         upperBound = probability + 1.96 * variance
         return lowerBound, upperBound
 
-    def updateWeightedCandidateList(
+    def update_weighted_candidate_list(
         self, solution: Solution, candidateList: List[WeightedCandidate], lastVertex: int
     ) -> None:
         maxDistance = 1.0

@@ -23,9 +23,9 @@ class Instance:
 
     def __post_init__(self) -> None:
         self.name = Path(self.path).name
-        self.loadInstance()
+        self.load_instance()
 
-    def loadInstance(self) -> None:
+    def load_instance(self) -> None:
         with open(self.path, "r", encoding="utf-8") as handle:
             lines = [line.strip() for line in handle if line.strip()]
 
