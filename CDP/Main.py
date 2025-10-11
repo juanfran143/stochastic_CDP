@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import colorsys
+import math
 import random
 import sys
 import time
@@ -14,6 +16,7 @@ from Instance import Instance
 from LocalSearches import tabu_search_capacity
 from Solution import Solution
 from objects import TestCase, WeightedCandidate
+from symmetry_integration import analyse_solution, pareto_points_to_rows, plot_pareto_front
 
 
 @dataclass
@@ -36,6 +39,62 @@ def clone_weighted_candidates(candidates: Iterable[WeightedCandidate]) -> List[W
         WeightedCandidate(candidate.vertex, candidate.nearest_vertex, candidate.distance, candidate.score)
         for candidate in candidates
     ]
+
+
+def _generate_indexed_palette(node_count: int) -> List[str]:
+    """Return a deterministic list of distinct colours keyed by index."""
+
+    if node_count <= 0:
+        return []
+    hues = [index / max(node_count, 1) for index in range(node_count)]
+    colours = []
+    for hue in hues:
+        r, g, b = colorsys.hsv_to_rgb(hue, 0.65, 0.92)
+        colours.append(f"#{int(r * 255):02x}{int(g * 255):02x}{int(b * 255):02x}")
+    return colours
+
+
+def load_colour_configuration(instance_path: Path, node_count: int) -> List[str]:
+    """Load colour labels from disk or fall back to index-based colours."""
+
+    colour_path = instance_path.with_suffix(instance_path.suffix + ".colors")
+    if colour_path.exists():
+        colours = [
+            line.strip()
+            for line in colour_path.read_text(encoding="utf-8").splitlines()
+            if line.strip()
+        ]
+        if len(colours) != node_count:
+            raise ValueError(
+                "Colour configuration must specify exactly one label per vertex."
+            )
+        return colours
+
+    return _generate_indexed_palette(node_count)
+
+
+def load_lambda_parameter(instance_path: Path) -> float:
+    """Return the symmetry lambda penalty, using defaults when unspecified."""
+
+    lambda_path = instance_path.with_suffix(instance_path.suffix + ".lambda")
+    if lambda_path.exists():
+        value = float(lambda_path.read_text(encoding="utf-8").strip())
+        if value < 0:
+            raise ValueError("Lambda penalty must be non-negative.")
+        return value
+    return 0.1
+
+
+def load_gamma_override(instance_path: Path) -> float | None:
+    """Load an optional gamma override value for the symmetry penalty."""
+
+    gamma_path = instance_path.with_suffix(instance_path.suffix + ".gamma")
+    if gamma_path.exists():
+        value = float(gamma_path.read_text(encoding="utf-8").strip())
+        if value < 0:
+            raise ValueError("Gamma override must be non-negative.")
+        return value
+    return None
 
 
 def load_test_cases(test_name: str) -> List[TestCase]:
@@ -135,12 +194,18 @@ def deterministic_multi_start(
     if best_solution.time == 0.0:
         best_solution.time = time.process_time() - start
 
+    best_solution.reevaluate()
     return best_solution, best_candidates
 
 
 def execute_test_case(test_case: TestCase) -> Tuple[Solution, List[WeightedCandidate]]:
     instance_path = Path("CDP") / test_case.instance_name
     instance = Instance(str(instance_path))
+    instance.assign_colours(load_colour_configuration(instance_path, instance.node_count))
+    instance.set_symmetry_parameters(
+        lambda_penalty=load_lambda_parameter(instance_path),
+        gamma_override=load_gamma_override(instance_path),
+    )
     heuristic = ConstructiveHeuristic(
         0.0,
         test_case.beta_construction,
@@ -156,6 +221,7 @@ def execute_test_case(test_case: TestCase) -> Tuple[Solution, List[WeightedCandi
         test_case.max_iterations,
         heuristic,
     )
+    solution.reevaluate()
     return deterministic_multi_start((solution, candidates), test_case, heuristic)
 
 
@@ -183,9 +249,75 @@ def main() -> None:
         Path("output") / "deterministic_summary.txt",
         "Instance\tbeta_ls\tseed\tcost\ttime\tcapacity\tweight\n",
     )
+    symmetry_writer = SummaryFile(
+        Path("output") / "symmetry_summary.txt",
+        "Instance\tseed\tbase_dispersion\tbase_penalty\tbest_dispersion\tbest_penalty\tfront_size\n",
+    )
 
     for test_case, solution, _ in results:
         write_deterministic_summary(solution, test_case, deterministic_writer)
+        analysis = analyse_solution(solution.instance, solution, steps=6)
+        base_dispersion = (
+            analysis.base_solution.dispersion
+            if math.isfinite(analysis.base_solution.dispersion)
+            else 0.0
+        )
+        base_penalty = analysis.base_solution.symmetry_penalty
+        pareto_plot_path: Path | None = None
+        plot_error: str | None = None
+        if analysis.epsilon_front:
+            best_candidate = min(
+                analysis.epsilon_front,
+                key=lambda candidate: (
+                    candidate.symmetry_penalty,
+                    -(
+                        candidate.dispersion
+                        if math.isfinite(candidate.dispersion)
+                        else 0.0
+                    ),
+                ),
+            )
+            best_dispersion = (
+                best_candidate.dispersion if math.isfinite(best_candidate.dispersion) else 0.0
+            )
+            best_penalty = best_candidate.symmetry_penalty
+        else:
+            best_dispersion = base_dispersion
+            best_penalty = base_penalty
+        try:
+            pareto_plot_path = plot_pareto_front(
+                analysis.base_solution,
+                analysis.epsilon_front,
+                Path("output") / f"{test_case.instance_name}_pareto.png",
+            )
+        except RuntimeError as error:
+            pareto_plot_path = None
+            plot_error = str(error)
+        symmetry_writer.append(
+            "\t".join(
+                [
+                    test_case.instance_name,
+                    f"{test_case.seed}",
+                    f"{base_dispersion}",
+                    f"{base_penalty}",
+                    f"{best_dispersion}",
+                    f"{best_penalty}",
+                    f"{len(analysis.epsilon_front)}",
+                ]
+            )
+        )
+
+        print(f"Frontera de Pareto para {test_case.instance_name} (seed={test_case.seed}):")
+        rows = pareto_points_to_rows([analysis.base_solution, *analysis.epsilon_front])
+        for index, (dispersion, penalty) in enumerate(rows):
+            label = "Sin simetría" if index == 0 else f"Iteración {index}"
+            print(f"  {label}: dispersión={dispersion:.3f}, penalización={penalty:.3f}")
+        if len(rows) == 1:
+            print("  No se encontraron mejoras adicionales en la frontera.")
+        if pareto_plot_path is not None:
+            print(f"  Plot guardado en: {pareto_plot_path}")
+        elif plot_error:
+            print(f"  No se generó plot: {plot_error}")
 
 
 if __name__ == "__main__":

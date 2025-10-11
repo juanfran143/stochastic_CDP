@@ -46,6 +46,7 @@ class ConstructiveHeuristic:
             self.instance.capacities[edge.vertex2],
         )
         self.max_min_distance = edge.distance
+        solution.evaluate_symmetry()
         return solution
 
     def weighted_score(self, distance: float, capacity: float) -> float:
@@ -119,6 +120,7 @@ class ConstructiveHeuristic:
             if candidate.distance < solution.objective_value:
                 solution.update_objective(candidate.vertex, candidate.nearest_vertex, candidate.distance)
             self.update_candidate_list(solution, candidate_list, candidate.vertex)
+        solution.evaluate_symmetry()
         return solution
 
     # ------------------------------------------------------------------
@@ -134,6 +136,7 @@ class ConstructiveHeuristic:
             if candidate.distance < solution.objective_value:
                 solution.update_objective(candidate.vertex, candidate.nearest_vertex, candidate.distance)
             self.update_candidate_list(solution, candidate_list, candidate.vertex)
+        solution.evaluate_symmetry()
         return solution, candidate_list
 
     def construct_biased_capacity_solution(self) -> Tuple[Solution, List[WeightedCandidate]]:
@@ -149,6 +152,7 @@ class ConstructiveHeuristic:
             if candidate.distance < solution.objective_value:
                 solution.update_objective(candidate.vertex, candidate.nearest_vertex, candidate.distance)
             self.update_weighted_candidate_list(solution, candidate_list, candidate.vertex)
+        solution.evaluate_symmetry()
         return solution, candidate_list
 
     def construct_biased_fixed_weight_solution(self, weight: float) -> Tuple[Solution, List[WeightedCandidate]]:
@@ -164,6 +168,7 @@ class ConstructiveHeuristic:
             if candidate.distance < solution.objective_value:
                 solution.update_objective(candidate.vertex, candidate.nearest_vertex, candidate.distance)
             self.update_weighted_candidate_list(solution, candidate_list, candidate.vertex)
+        solution.evaluate_symmetry()
         return solution, candidate_list
 
     def construct_biased_distribution_solution(
@@ -195,6 +200,7 @@ class ConstructiveHeuristic:
             if candidate.distance < solution.objective_value:
                 solution.update_objective(candidate.vertex, candidate.nearest_vertex, candidate.distance)
             self.update_weighted_candidate_list(solution, candidate_list, candidate.vertex)
+        solution.evaluate_symmetry()
         return solution, candidate_list, selected_interval
 
     # ------------------------------------------------------------------
