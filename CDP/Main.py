@@ -56,8 +56,8 @@ def _generate_indexed_palette(node_count: int) -> List[str]:
 
 def load_colour_configuration(instance_path: Path, node_count: int) -> List[str]:
     """Load colour labels from disk or fall back to index-based colours."""
-
-    colour_path = instance_path.with_suffix(instance_path.suffix + ".colors")
+    a = Path(instance_path)
+    colour_path = a.with_suffix(a.suffix + ".colors")
     if colour_path.exists():
         colours = [
             line.strip()
@@ -75,8 +75,8 @@ def load_colour_configuration(instance_path: Path, node_count: int) -> List[str]
 
 def load_lambda_parameter(instance_path: Path) -> float:
     """Return the symmetry lambda penalty, using defaults when unspecified."""
-
-    lambda_path = instance_path.with_suffix(instance_path.suffix + ".lambda")
+    a = Path(instance_path)
+    lambda_path = a.with_suffix(a.suffix + ".lambda")
     if lambda_path.exists():
         value = float(lambda_path.read_text(encoding="utf-8").strip())
         if value < 0:
@@ -87,8 +87,8 @@ def load_lambda_parameter(instance_path: Path) -> float:
 
 def load_gamma_override(instance_path: Path) -> float | None:
     """Load an optional gamma override value for the symmetry penalty."""
-
-    gamma_path = instance_path.with_suffix(instance_path.suffix + ".gamma")
+    a = Path(instance_path)
+    gamma_path = a.with_suffix(a.suffix + ".gamma")
     if gamma_path.exists():
         value = float(gamma_path.read_text(encoding="utf-8").strip())
         if value < 0:
@@ -98,7 +98,7 @@ def load_gamma_override(instance_path: Path) -> float | None:
 
 
 def load_test_cases(test_name: str) -> List[TestCase]:
-    file_path = Path("test") / f"{test_name}.txt"
+    file_path = Path("../test") / f"{test_name}.txt"
     test_cases: List[TestCase] = []
     with file_path.open("r", encoding="utf-8") as handle:
         for raw_line in handle:
@@ -199,7 +199,7 @@ def deterministic_multi_start(
 
 
 def execute_test_case(test_case: TestCase) -> Tuple[Solution, List[WeightedCandidate]]:
-    instance_path = Path("CDP") / test_case.instance_name
+    instance_path = test_case.instance_name
     instance = Instance(str(instance_path))
     instance.assign_colours(load_colour_configuration(instance_path, instance.node_count))
     instance.set_symmetry_parameters(
@@ -246,11 +246,11 @@ def main() -> None:
     perform_sanity_check(results)
 
     deterministic_writer = SummaryFile(
-        Path("output") / "deterministic_summary.txt",
+        Path("../output") / "deterministic_summary.txt",
         "Instance\tbeta_ls\tseed\tcost\ttime\tcapacity\tweight\n",
     )
     symmetry_writer = SummaryFile(
-        Path("output") / "symmetry_summary.txt",
+        Path("../output") / "symmetry_summary.txt",
         "Instance\tseed\tbase_dispersion\tbase_penalty\tbest_dispersion\tbest_penalty\tfront_size\n",
     )
 
@@ -288,7 +288,7 @@ def main() -> None:
             pareto_plot_path = plot_pareto_front(
                 analysis.base_solution,
                 analysis.epsilon_front,
-                Path("output") / f"{test_case.instance_name}_pareto.png",
+                Path("../output") / f"{test_case.instance_name}_pareto.png",
             )
         except RuntimeError as error:
             pareto_plot_path = None
