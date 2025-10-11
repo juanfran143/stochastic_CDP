@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import math
 import sys
 from dataclasses import dataclass
@@ -11,6 +12,14 @@ from typing import Iterable, List, Sequence, Tuple
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.append(str(ROOT))
+
+LOGGER = logging.getLogger(__name__)
+
+# Enumerating every subset is only practical for small instances. The constant
+# below defines the maximum number of nodes that will rely on the exhaustive
+# ε-constraint and weighted-sum solvers before falling back to heuristic-only
+# information.
+MAX_ENUMERABLE_NODES = 18
 
 from Instance import Instance
 from Solution import Solution
@@ -130,6 +139,14 @@ def generate_epsilon_front(
     if steps <= 0:
         raise ValueError("steps must be strictly positive.")
 
+    if instance.node_count > MAX_ENUMERABLE_NODES:
+        LOGGER.info(
+            "Skipping ε-constraint enumeration for %s nodes (limit=%s).",
+            instance.node_count,
+            MAX_ENUMERABLE_NODES,
+        )
+        return []
+
     solver = EpsilonConstraintSolver(build_problem_instance(instance))
     front: List[CandidateSolution] = []
     seen: set[Tuple[str, ...]] = {base_candidate.selected_nodes}
@@ -175,6 +192,14 @@ def generate_weighted_front(
     alpha_pairs: Sequence[Tuple[float, float]],
 ) -> List[WeightedFrontEntry]:
     """Evaluate the instance with a family of α weights for the Pareto front."""
+
+    if instance.node_count > MAX_ENUMERABLE_NODES:
+        LOGGER.info(
+            "Skipping weighted-sum enumeration for %s nodes (limit=%s).",
+            instance.node_count,
+            MAX_ENUMERABLE_NODES,
+        )
+        return []
 
     problem_instance = build_problem_instance(instance)
     entries: List[WeightedFrontEntry] = []

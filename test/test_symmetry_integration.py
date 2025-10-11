@@ -14,6 +14,7 @@ from Instance import Instance
 from Main import DEFAULT_ALPHA_STEP, load_test_cases
 from Solution import Solution
 from symmetry_integration import (
+    MAX_ENUMERABLE_NODES,
     analyse_solution,
     default_alpha_schedule,
     generate_weighted_front,
@@ -104,6 +105,46 @@ class TestSymmetryIntegration(unittest.TestCase):
             )
         else:
             self.assertTrue(produced_pairs)
+
+    def test_large_instances_skip_exact_enumeration(self) -> None:
+        node_count = MAX_ENUMERABLE_NODES + 2
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir) / "large_instance.txt"
+            capacities = "\t".join(["1.0"] * node_count)
+            rows = []
+            for row in range(node_count):
+                values = []
+                for col in range(node_count):
+                    values.append("0.0" if row == col else "1.0")
+                rows.append("\t".join(values))
+            contents = "\n".join([
+                str(node_count),
+                "5.0",
+                capacities,
+                *rows,
+            ])
+            tmp_path.write_text(contents, encoding="utf-8")
+
+            instance = Instance(str(tmp_path))
+            colours = ["red" if index % 2 == 0 else "blue" for index in range(node_count)]
+            instance.assign_colours(colours)
+            instance.set_symmetry_parameters(lambda_penalty=0.2)
+
+            solution = Solution(instance)
+            for vertex in range(6):
+                solution.add_vertex(vertex)
+            solution.reevaluate()
+
+            analysis = analyse_solution(instance, solution, steps=4)
+
+        self.assertFalse(
+            analysis.epsilon_front,
+            "ε-constraint enumeration should be skipped for large instances.",
+        )
+        self.assertFalse(
+            analysis.weighted_front,
+            "Weighted-sum enumeration should be skipped for large instances.",
+        )
 
     @unittest.skipIf(plt is None, "matplotlib not available in test environment")
     def test_plot_pareto_front_creates_image(self) -> None:
