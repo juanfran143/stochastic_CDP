@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import sys
 import tempfile
 from pathlib import Path
@@ -9,6 +10,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.append(str(ROOT / "CDP"))
 
 from Instance import Instance
+from Main import DEFAULT_ALPHA_STEP, load_test_cases
 from Solution import Solution
 from symmetry_integration import (
     analyse_solution,
@@ -79,6 +81,29 @@ class TestSymmetryIntegration(unittest.TestCase):
         for previous, current in zip(penalties, penalties[1:]):
             self.assertLessEqual(current + 1e-9, previous)
 
+    def test_analyse_solution_honours_custom_alpha_step(self) -> None:
+        solution = Solution(self.instance)
+        solution.selected_vertices = [0, 2]
+        solution.reevaluate()
+        custom_step = 0.37
+        analysis = analyse_solution(
+            self.instance,
+            solution,
+            steps=3,
+            alpha_step=custom_step,
+        )
+        expected_pairs = default_alpha_schedule(step=custom_step)
+        produced_pairs = {entry.alpha_pair for entry in analysis.weighted_front}
+        default_pairs = set(default_alpha_schedule())
+        distinctive_pairs = {pair for pair in expected_pairs if pair not in default_pairs}
+        if distinctive_pairs:
+            self.assertTrue(
+                produced_pairs & distinctive_pairs,
+                "Weighted front should include at least one α pair derived from the custom step.",
+            )
+        else:
+            self.assertTrue(produced_pairs)
+
     @unittest.skipIf(plt is None, "matplotlib not available in test environment")
     def test_plot_pareto_front_creates_image(self) -> None:
         solution = Solution(self.instance)
@@ -125,6 +150,33 @@ class TestSymmetryIntegration(unittest.TestCase):
         self.assertEqual(front[0].alpha_pair, schedule[0])
         produced_pairs = {entry.alpha_pair for entry in front}
         self.assertIn(schedule[-1], produced_pairs)
+
+
+class TestConfigurationLoading(unittest.TestCase):
+    def test_load_test_cases_reads_alpha_step(self) -> None:
+        config_name = "temp_alpha"
+        config_path = ROOT / "test" / f"{config_name}.txt"
+        config_path.write_text(
+            "\n".join(
+                [
+                    "# instance\tseed\tmax_time\tbeta_c\tbeta_ls\tmax_iter\tweight",
+                    "sample_instance.txt\t0\t1\t0.5\t0.5\t10\t0.7",
+                    "sample_instance.txt\t0\t1\t0.5\t0.5\t10\t0.7\t0.2",
+                ]
+            ),
+            encoding="utf-8",
+        )
+        original_cwd = Path.cwd()
+        try:
+            os.chdir(ROOT / "CDP")
+            cases = load_test_cases(config_name)
+        finally:
+            os.chdir(original_cwd)
+            if config_path.exists():
+                config_path.unlink()
+        self.assertEqual(len(cases), 2)
+        self.assertAlmostEqual(cases[0].alpha_step, DEFAULT_ALPHA_STEP)
+        self.assertAlmostEqual(cases[1].alpha_step, 0.2)
 
 
 if __name__ == "__main__":  # pragma: no cover
