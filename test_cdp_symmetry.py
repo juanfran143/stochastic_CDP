@@ -9,6 +9,7 @@ from pathlib import Path
 from cdp_symmetry import (
     EpsilonConstraintSolver,
     GreedySymmetryHeuristic,
+    Node,
     ProblemInstance,
     WeightedSumSolver,
     plot_solution,
@@ -59,17 +60,42 @@ class TestCDPSymmetry(unittest.TestCase):
         solution = heuristic.solve()
         self.assertEqual(solution.selected_nodes, ("A", "C"))
 
-    def test_random_colour_generation_is_reproducible(self) -> None:
-        first = self.instance.with_random_colours(seed=123)
-        second = self.instance.with_random_colours(seed=123)
-        colours_first = [node.color for node in first.nodes]
-        colours_second = [node.color for node in second.nodes]
-        self.assertEqual(colours_first, colours_second)
-        distinct_colours = len(set(colours_first))
-        if len(self.instance.nodes) >= 4:
-            self.assertIn(distinct_colours, {3, 4})
-        else:
-            self.assertLessEqual(distinct_colours, len(self.instance.nodes))
+    def test_rule_based_colour_generation(self) -> None:
+        coloured = self.instance.with_random_colours()
+        colours = [node.color for node in coloured.nodes]
+        self.assertEqual(colours, ["#1f77b4", "#1f77b4", "#ff7f0e", "#1f77b4"])
+
+    def test_rule_based_colour_divisibility(self) -> None:
+        nodes = [
+            Node(node_id=str(idx), capacity=1.0, color="#000000", coordinates=(0.0, 0.0))
+            for idx in range(1, 8)
+        ]
+        distances = {
+            (str(i), str(j)): 1.0
+            for i in range(1, 8)
+            for j in range(1, 8)
+            if i != j
+        }
+        instance = ProblemInstance(
+            nodes=nodes,
+            demand=5.0,
+            lambda_penalty=0.0,
+            distances=distances,
+        )
+        coloured = instance.with_random_colours()
+        colours = [node.color for node in coloured.nodes]
+        self.assertEqual(
+            colours,
+            [
+                "#1f77b4",  # fallback
+                "#1f77b4",  # divisible by 2
+                "#ff7f0e",  # divisible by 3
+                "#1f77b4",  # divisible by 2
+                "#2ca02c",  # divisible by 5
+                "#1f77b4",  # divisible by 2 takes precedence over 3
+                "#d62728",  # divisible by 7
+            ],
+        )
 
     @unittest.skipIf(plt is None, "matplotlib not available in test environment")
     def test_plot_solution_creates_file(self) -> None:
