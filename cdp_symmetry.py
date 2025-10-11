@@ -216,42 +216,62 @@ class ProblemInstance:
         num_colours: Optional[int] = None,
         palette: Sequence[str] = DEFAULT_COLOUR_PALETTE,
     ) -> "ProblemInstance":
-        """Return a copy of the instance with randomly generated colours.
+        """Return a copy of the instance with rule-based colour assignments.
 
-        Colours are sampled between three and four distinct values whenever
-        possible, depending on the number of nodes available. When the number of
-        nodes is less than three, the method falls back to the maximum number of
-        distinct colours that can be assigned. The sampling process is
-        reproducible when ``seed`` is provided.
+        Colours are no longer sampled uniformly at random. Instead, a palette of
+        at most four colours (and at least three when possible) is selected and
+        applied deterministically according to divisibility rules on the node
+        identifiers. This ensures that instances avoid having as many colours as
+        nodes, which previously resulted in excessive symmetry penalties.
         """
+
+        del seed  # ``seed`` is retained for backwards compatibility but unused.
 
         if not self.nodes:
             raise ValueError("Cannot generate colours for an instance with no nodes.")
         if not palette:
             raise ValueError("Palette must contain at least one colour.")
-        rng = random.Random(seed)
-        max_allowed = min(len(palette), len(self.nodes))
+
+        default_divisors: Tuple[int, ...] = (2, 3, 5, 7)
+        max_allowed = min(len(palette), len(default_divisors))
         if num_colours is None:
-            if max_allowed >= 4 and len(self.nodes) >= 4:
+            if len(self.nodes) >= 4 and max_allowed >= 4:
                 num_colours = 4
-            elif max_allowed >= 3:
+            elif len(self.nodes) >= 3 and max_allowed >= 3:
                 num_colours = 3
             else:
-                num_colours = max_allowed
+                num_colours = min(len(self.nodes), max_allowed)
         if num_colours <= 0 or num_colours > max_allowed:
             raise ValueError(
-                "num_colours must be between 1 and min(len(palette), len(nodes))."
+                "num_colours must be between 1 and min(len(palette), 4)."
             )
-        chosen_palette = list(rng.sample(palette, k=num_colours))
-        assigned_colours: List[str] = list(chosen_palette)
-        while len(assigned_colours) < len(self.nodes):
-            assigned_colours.append(rng.choice(chosen_palette))
-        rng.shuffle(assigned_colours)
+
+        chosen_palette = list(palette[:num_colours])
+        active_divisors = default_divisors[:num_colours]
+
+        def _numeric_identifier(node_id: str, fallback: int) -> int:
+            """Best-effort conversion of the node identifier into an integer."""
+
+            if node_id.isdigit():
+                value = int(node_id)
+            else:
+                digits = "".join(character for character in node_id if character.isdigit())
+                value = int(digits) if digits else fallback
+            return value or fallback
+
+        def _assign_colour(index: int, node_id: str) -> str:
+            numeric_id = _numeric_identifier(node_id, index + 1)
+            for divisor, colour in zip(active_divisors, chosen_palette):
+                if numeric_id % divisor == 0:
+                    return colour
+            # Fallback: distribute remaining nodes cyclically over the palette.
+            return chosen_palette[(numeric_id - 1) % len(chosen_palette)]
+
         new_nodes = [
             Node(
                 node_id=node.node_id,
                 capacity=node.capacity,
-                color=assigned_colours[index],
+                color=_assign_colour(index, node.node_id),
                 coordinates=node.coordinates,
             )
             for index, node in enumerate(self.nodes)
