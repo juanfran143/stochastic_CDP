@@ -63,11 +63,13 @@ def _build_distances(instance: Instance) -> dict[Tuple[str, str], float]:
     distances: dict[Tuple[str, str], float] = {}
     for i in range(instance.node_count):
         for j in range(instance.node_count):
+            node_i = str(i)
+            node_j = str(j)
             if i == j:
+                distances[(node_i, node_j)] = 0.0
                 continue
             value = instance.distances[i][j]
-            if value:
-                distances[(str(i), str(j))] = value
+            distances[(node_i, node_j)] = value
     return distances
 
 

@@ -40,4 +40,5 @@ class TestCase:
     beta_local_search: float
     max_iterations: int
     weight: float
+    alpha_step: float = 0.05
 

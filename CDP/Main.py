@@ -97,31 +97,45 @@ def load_gamma_override(instance_path: Path) -> float | None:
     return None
 
 
+DEFAULT_ALPHA_STEP = 0.05
+
+
 def load_test_cases(test_name: str) -> List[TestCase]:
     file_path = Path("../test") / f"{test_name}.txt"
-    test_cases: List[TestCase] = []
-    with file_path.open("r", encoding="utf-8") as handle:
+    cases: List[TestCase] = []
+    with file_path.open(encoding="utf-8") as handle:
         for raw_line in handle:
             line = raw_line.strip()
             if not line or line.startswith("#"):
                 continue
             values = line.split("\t")
-            if len(values) != 7:
+            if len(values) not in {7, 8}:
                 raise ValueError(
-                    "Each test case line must contain exactly seven tab-separated values."
+                    "Each test case line must contain seven or eight tab-separated values."
                 )
-            test_cases.append(
+            (
+                instance_name,
+                seed,
+                max_time,
+                beta_c,
+                beta_ls,
+                max_iterations,
+                weight,
+                *alpha_step,
+            ) = values
+            cases.append(
                 TestCase(
-                    instance_name=values[0],
-                    seed=int(values[1]),
-                    max_time=int(values[2]),
-                    beta_construction=float(values[3]),
-                    beta_local_search=float(values[4]),
-                    max_iterations=int(values[5]),
-                    weight=float(values[6]),
+                    instance_name=instance_name,
+                    seed=int(seed),
+                    max_time=int(max_time),
+                    beta_construction=float(beta_c),
+                    beta_local_search=float(beta_ls),
+                    max_iterations=int(max_iterations),
+                    weight=float(weight),
+                    alpha_step=float(alpha_step[0]) if alpha_step else DEFAULT_ALPHA_STEP,
                 )
             )
-    return test_cases
+    return cases
 
 
 def write_deterministic_summary(solution: Solution, test_case: TestCase, writer: SummaryFile) -> None:
@@ -256,7 +270,12 @@ def main() -> None:
 
     for test_case, solution, _ in results:
         write_deterministic_summary(solution, test_case, deterministic_writer)
-        analysis = analyse_solution(solution.instance, solution, steps=6)
+        analysis = analyse_solution(
+            solution.instance,
+            solution,
+            steps=6,
+            alpha_step=test_case.alpha_step,
+        )
         base_dispersion = (
             analysis.base_solution.dispersion
             if math.isfinite(analysis.base_solution.dispersion)
