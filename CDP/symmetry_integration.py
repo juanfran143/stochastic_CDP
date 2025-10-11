@@ -6,7 +6,7 @@ import math
 import sys
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterable, List, Tuple
+from typing import Iterable, List, Sequence, Tuple
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
@@ -19,6 +19,7 @@ from cdp_symmetry import (
     EpsilonConstraintSolver,
     Node,
     ProblemInstance,
+    WeightedSumSolver,
     evaluate_subset,
 )
 
@@ -29,11 +30,20 @@ except ImportError:  # pragma: no cover - optional dependency
 
 
 @dataclass(slots=True)
+class WeightedFrontEntry:
+    """Describe a weighted-sum evaluation together with its α pair."""
+
+    alpha_pair: Tuple[float, float]
+    candidate: CandidateSolution
+
+
+@dataclass(slots=True)
 class SymmetryAnalysis:
     """Container gathering the different symmetry evaluations for a solution."""
 
     base_solution: CandidateSolution
     epsilon_front: List[CandidateSolution]
+    weighted_front: List[WeightedFrontEntry]
 
 
 def _build_nodes(instance: Instance) -> List[Node]:
@@ -141,23 +151,81 @@ def generate_epsilon_front(
     return front
 
 
-def analyse_solution(instance: Instance, solution: Solution, *, steps: int = 5) -> SymmetryAnalysis:
+def default_alpha_schedule(step: float = 0.05) -> List[Tuple[float, float]]:
+    """Return a default decreasing sequence of α pairs for the weighted sum."""
+
+    if not 0 < step <= 1:
+        raise ValueError("step must be in the interval (0, 1].")
+    schedule: List[Tuple[float, float]] = []
+    current = 1.0
+    while current >= -1e-9:
+        alpha_dispersion = min(max(current, 0.0), 1.0)
+        alpha_symmetry = 1.0 - alpha_dispersion
+        schedule.append((alpha_dispersion, alpha_symmetry))
+        current -= step
+    if not math.isclose(schedule[-1][0], 0.0, abs_tol=1e-9):
+        schedule.append((0.0, 1.0))
+    return schedule
+
+
+def generate_weighted_front(
+    instance: Instance,
+    alpha_pairs: Sequence[Tuple[float, float]],
+) -> List[WeightedFrontEntry]:
+    """Evaluate the instance with a family of α weights for the Pareto front."""
+
+    problem_instance = build_problem_instance(instance)
+    entries: List[WeightedFrontEntry] = []
+    seen: set[Tuple[str, ...]] = set()
+    for alpha_dispersion, alpha_symmetry in alpha_pairs:
+        total = alpha_dispersion + alpha_symmetry
+        if not math.isclose(total, 1.0, rel_tol=1e-9, abs_tol=1e-9):
+            raise ValueError("Each alpha pair must sum to 1.0.")
+        if alpha_dispersion < 0 or alpha_symmetry < 0:
+            raise ValueError("Alpha weights must be non-negative.")
+        solver = WeightedSumSolver(problem_instance, alpha=alpha_dispersion)
+        candidate = solver.solve()
+        if candidate.selected_nodes in seen:
+            continue
+        seen.add(candidate.selected_nodes)
+        entries.append(
+            WeightedFrontEntry(
+                alpha_pair=(alpha_dispersion, alpha_symmetry),
+                candidate=candidate,
+            )
+        )
+    return entries
+
+
+def analyse_solution(
+    instance: Instance,
+    solution: Solution,
+    *,
+    steps: int = 5,
+    alpha_step: float = 0.05,
+) -> SymmetryAnalysis:
     """Produce a detailed symmetry report for the provided solution."""
 
     base = evaluate_solution_with_symmetry(instance, solution)
     front = generate_epsilon_front(instance, solution, steps=steps)
-    return SymmetryAnalysis(base_solution=base, epsilon_front=front)
+    alpha_pairs = default_alpha_schedule(step=alpha_step)
+    weighted_front = generate_weighted_front(instance, alpha_pairs)
+    return SymmetryAnalysis(
+        base_solution=base,
+        epsilon_front=front,
+        weighted_front=weighted_front,
+    )
 
 
 def pareto_points_to_rows(candidates: Iterable[CandidateSolution]) -> List[Tuple[float, float]]:
-    """Return dispersion/penalty pairs for the provided candidates."""
+    """Return symmetry/CDP objective pairs for the provided candidates."""
 
     rows: List[Tuple[float, float]] = []
     for candidate in candidates:
         dispersion = (
             candidate.dispersion if math.isfinite(candidate.dispersion) else 0.0
         )
-        rows.append((dispersion, candidate.symmetry_penalty))
+        rows.append((candidate.symmetry_penalty, dispersion))
     return rows
 
 
@@ -165,19 +233,23 @@ def plot_pareto_front(
     base_candidate: CandidateSolution,
     frontier: Iterable[CandidateSolution],
     output_path: Path,
+    *,
+    alpha_labels: Sequence[str] | None = None,
 ) -> Path:
     """Create a scatter plot displaying the Pareto frontier.
 
     Parameters
     ----------
     base_candidate:
-        Solution generated without symmetry pressure. It is highlighted as the
-        starting point in the plot.
+        First candidate used as the anchor point in the chart, typically the
+        evaluation obtained with α=(1, 0).
     frontier:
-        Iterable describing the progressive improvements in symmetry obtained
-        through tightened epsilon constraints.
+        Iterable describing the remaining points in the frontier (e.g. obtained
+        by tightening ε constraints or by exploring additional α combinations).
     output_path:
         Destination for the generated image.
+    alpha_labels:
+        Optional textual labels describing the α weights used for each point.
     """
 
     if plt is None:  # pragma: no cover - plotting is optional
@@ -193,30 +265,41 @@ def plot_pareto_front(
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
     plt.figure(figsize=(8, 5))
-    dispersions = [row[0] for row in rows]
-    penalties = [row[1] for row in rows]
-    plt.plot(dispersions, penalties, marker="o", linestyle="-", color="#1f77b4")
+    penalties = [row[0] for row in rows]
+    dispersions = [row[1] for row in rows]
+    plt.plot(penalties, dispersions, marker="o", linestyle="-", color="#1f77b4")
     plt.scatter(
-        dispersions[0],
         penalties[0],
+        dispersions[0],
         color="#d62728",
         marker="s",
         s=120,
-        label="Sin simetría",
+        label="Punto inicial",
         zorder=3,
     )
     if len(rows) > 1:
         plt.scatter(
-            dispersions[1:],
             penalties[1:],
+            dispersions[1:],
             color="#2ca02c",
             marker="o",
             s=80,
-            label="Restricciones ε",
+            label="Frontera explorada",
             zorder=3,
         )
-    plt.xlabel("Dispersión")
-    plt.ylabel("Penalización de simetría")
+    if alpha_labels:
+        if len(alpha_labels) != len(rows):
+            raise ValueError("alpha_labels length must match the number of candidates.")
+        for label, x_val, y_val in zip(alpha_labels, penalties, dispersions):
+            plt.annotate(
+                label,
+                (x_val, y_val),
+                textcoords="offset points",
+                xytext=(6, 6),
+                fontsize="small",
+            )
+    plt.xlabel("Función objetivo de simetría (penalización)")
+    plt.ylabel("Función objetivo CDP (dispersión)")
     plt.title("Frontera de Pareto CDP-Simetría")
     plt.grid(True, linestyle="--", alpha=0.4)
     plt.legend(loc="best")

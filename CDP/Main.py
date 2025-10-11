@@ -265,9 +265,18 @@ def main() -> None:
         base_penalty = analysis.base_solution.symmetry_penalty
         pareto_plot_path: Path | None = None
         plot_error: str | None = None
-        if analysis.epsilon_front:
+        alpha_labels: list[str] | None = None
+        if analysis.weighted_front:
+            candidate_pool = [entry.candidate for entry in analysis.weighted_front]
+            alpha_labels = [
+                f"α=({entry.alpha_pair[0]:.2f}, {entry.alpha_pair[1]:.2f})"
+                for entry in analysis.weighted_front
+            ]
+        else:
+            candidate_pool = [analysis.base_solution, *analysis.epsilon_front]
+        if candidate_pool:
             best_candidate = min(
-                analysis.epsilon_front,
+                candidate_pool,
                 key=lambda candidate: (
                     candidate.symmetry_penalty,
                     -(
@@ -282,13 +291,15 @@ def main() -> None:
             )
             best_penalty = best_candidate.symmetry_penalty
         else:
+            candidate_pool = [analysis.base_solution]
             best_dispersion = base_dispersion
             best_penalty = base_penalty
         try:
             pareto_plot_path = plot_pareto_front(
-                analysis.base_solution,
-                analysis.epsilon_front,
+                candidate_pool[0],
+                candidate_pool[1:],
                 Path("../output") / f"{test_case.instance_name}_pareto.png",
+                alpha_labels=alpha_labels,
             )
         except RuntimeError as error:
             pareto_plot_path = None
@@ -302,18 +313,36 @@ def main() -> None:
                     f"{base_penalty}",
                     f"{best_dispersion}",
                     f"{best_penalty}",
-                    f"{len(analysis.epsilon_front)}",
+                    f"{max(len(candidate_pool) - 1, 0)}",
                 ]
             )
         )
 
         print(f"Frontera de Pareto para {test_case.instance_name} (seed={test_case.seed}):")
-        rows = pareto_points_to_rows([analysis.base_solution, *analysis.epsilon_front])
-        for index, (dispersion, penalty) in enumerate(rows):
-            label = "Sin simetría" if index == 0 else f"Iteración {index}"
-            print(f"  {label}: dispersión={dispersion:.3f}, penalización={penalty:.3f}")
+        print(
+            "  Referencia heurística sin simetría: "
+            f"objetivo_CDP={base_dispersion:.3f}, "
+            f"objetivo_simetría={base_penalty:.3f}"
+        )
+        rows = pareto_points_to_rows(candidate_pool)
+        if alpha_labels is not None:
+            labels = alpha_labels
+        else:
+            labels = [
+                "Sin simetría",
+                *[f"Iteración {index}" for index in range(1, len(rows))],
+            ]
+        for label, (penalty, dispersion) in zip(labels, rows):
+            print(
+                "  "
+                f"{label}: objetivo_CDP={dispersion:.3f}, "
+                f"objetivo_simetría={penalty:.3f}"
+            )
         if len(rows) == 1:
-            print("  No se encontraron mejoras adicionales en la frontera.")
+            print(
+                "  No se encontraron mejoras adicionales en la frontera con las "
+                "combinaciones de α evaluadas."
+            )
         if pareto_plot_path is not None:
             print(f"  Plot guardado en: {pareto_plot_path}")
         elif plot_error:
