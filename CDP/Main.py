@@ -100,6 +100,29 @@ def load_gamma_override(instance_path: Path) -> float | None:
 DEFAULT_ALPHA_STEP = 0.05
 
 
+def resolve_instance_path(instance_reference: str) -> tuple[str, Path]:
+    """Return a display name and absolute path for the requested instance."""
+
+    reference_path = Path(instance_reference)
+    if reference_path.is_absolute():
+        if not reference_path.exists():
+            raise FileNotFoundError(
+                f"No se encontró la instancia solicitada en '{reference_path}'."
+            )
+        return reference_path.name, reference_path
+
+    search_roots = [Path("../Instances"), Path("."), Path("..")]
+    for root in search_roots:
+        candidate = (root / reference_path).resolve()
+        if candidate.exists():
+            return reference_path.name, candidate
+
+    raise FileNotFoundError(
+        "No se encontró la instancia solicitada. "
+        f"Se buscó en: {', '.join(str((root / reference_path).resolve()) for root in search_roots)}."
+    )
+
+
 def load_test_cases(test_name: str) -> List[TestCase]:
     file_path = Path("../test") / f"{test_name}.txt"
     cases: List[TestCase] = []
@@ -114,7 +137,7 @@ def load_test_cases(test_name: str) -> List[TestCase]:
                     "Each test case line must contain seven or eight tab-separated values."
                 )
             (
-                instance_name,
+                instance_reference,
                 seed,
                 max_time,
                 beta_c,
@@ -123,9 +146,11 @@ def load_test_cases(test_name: str) -> List[TestCase]:
                 weight,
                 *alpha_step,
             ) = values
+            instance_name, instance_path = resolve_instance_path(instance_reference)
             cases.append(
                 TestCase(
                     instance_name=instance_name,
+                    instance_path=instance_path,
                     seed=int(seed),
                     max_time=int(max_time),
                     beta_construction=float(beta_c),
@@ -213,7 +238,7 @@ def deterministic_multi_start(
 
 
 def execute_test_case(test_case: TestCase) -> Tuple[Solution, List[WeightedCandidate]]:
-    instance_path = test_case.instance_name
+    instance_path = test_case.instance_path
     instance = Instance(str(instance_path))
     instance.assign_colours(load_colour_configuration(instance_path, instance.node_count))
     instance.set_symmetry_parameters(
