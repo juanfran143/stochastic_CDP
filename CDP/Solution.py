@@ -14,80 +14,80 @@ class Solution:
     """Represents a feasible (or partially feasible) solution for the CDP."""
 
     instance: "Instance"
-    selectedVertices: List[int] = field(default_factory=list)
-    minDistanceVertex1: int = -1
-    minDistanceVertex2: int = -1
-    objectiveValue: float = field(init=False)
+    selected_vertices: List[int] = field(default_factory=list)
+    min_distance_vertex1: int = -1
+    min_distance_vertex2: int = -1
+    objective_value: float = field(init=False)
     capacity: float = 0.0
     time: float = 0.0
     reliability: Dict[int, float] = field(default_factory=lambda: {1: 0.0, 2: 0.0})
-    stochasticCapacity: Dict[int, float] = field(default_factory=lambda: {1: 0.0, 2: 0.0})
-    stochasticObjective: Dict[int, float] = field(default_factory=lambda: {1: 0.0, 2: 0.0})
-    meanStochasticObjective: Dict[int, float] = field(default_factory=lambda: {1: 0.0, 2: 0.0})
+    stochastic_capacity: Dict[int, float] = field(default_factory=lambda: {1: 0.0, 2: 0.0})
+    stochastic_objective: Dict[int, float] = field(default_factory=lambda: {1: 0.0, 2: 0.0})
+    mean_stochastic_objective: Dict[int, float] = field(default_factory=lambda: {1: 0.0, 2: 0.0})
 
     def __post_init__(self) -> None:
-        self.objectiveValue = self.instance.sortedEdges[0].distance * 10
+        self.objective_value = self.instance.sorted_edges[0].distance * 10
 
     def copy(self) -> "Solution":
         clone = Solution(self.instance)
-        clone.selectedVertices = list(self.selectedVertices)
-        clone.minDistanceVertex1 = self.minDistanceVertex1
-        clone.minDistanceVertex2 = self.minDistanceVertex2
-        clone.objectiveValue = self.objectiveValue
+        clone.selected_vertices = list(self.selected_vertices)
+        clone.min_distance_vertex1 = self.min_distance_vertex1
+        clone.min_distance_vertex2 = self.min_distance_vertex2
+        clone.objective_value = self.objective_value
         clone.capacity = self.capacity
         clone.time = self.time
         clone.reliability = dict(self.reliability)
-        clone.stochasticCapacity = dict(self.stochasticCapacity)
-        clone.stochasticObjective = dict(self.stochasticObjective)
-        clone.meanStochasticObjective = dict(self.meanStochasticObjective)
+        clone.stochastic_capacity = dict(self.stochastic_capacity)
+        clone.stochastic_objective = dict(self.stochastic_objective)
+        clone.mean_stochastic_objective = dict(self.mean_stochastic_objective)
         return clone
 
     def add_vertex(self, vertex: int) -> None:
-        self.selectedVertices.append(vertex)
+        self.selected_vertices.append(vertex)
         self.capacity += self.instance.capacities[vertex]
 
     def remove_vertex(self, vertex: int) -> None:
-        self.selectedVertices.remove(vertex)
+        self.selected_vertices.remove(vertex)
         self.capacity -= self.instance.capacities[vertex]
 
     def distance_to(self, vertex: int) -> Tuple[int, float]:
-        minDistance = self.instance.sortedEdges[0].distance * 10
-        minVertex = -1
-        for selected in self.selectedVertices:
-            candidateDistance = self.instance.distances[selected][vertex]
-            if candidateDistance < minDistance:
-                minDistance = candidateDistance
-                minVertex = selected
-        return minVertex, minDistance
+        min_distance = self.instance.sorted_edges[0].distance * 10
+        min_vertex = -1
+        for selected in self.selected_vertices:
+            candidate_distance = self.instance.distances[selected][vertex]
+            if candidate_distance < min_distance:
+                min_distance = candidate_distance
+                min_vertex = selected
+        return min_vertex, min_distance
 
     def is_feasible(self) -> bool:
-        return self.capacity >= self.instance.minCapacity
+        return self.capacity >= self.instance.min_capacity
 
     def update_objective(self, vertex1: int, vertex2: int, distance: float) -> None:
-        self.objectiveValue = distance
-        self.minDistanceVertex1 = vertex1
-        self.minDistanceVertex2 = vertex2
+        self.objective_value = distance
+        self.min_distance_vertex1 = vertex1
+        self.min_distance_vertex2 = vertex2
 
     def evaluate_complete(self) -> float:
-        self.objectiveValue = self.instance.sortedEdges[0].distance * 10
-        for vertex1 in self.selectedVertices:
-            for vertex2 in self.selectedVertices:
+        self.objective_value = self.instance.sorted_edges[0].distance * 10
+        for vertex1 in self.selected_vertices:
+            for vertex2 in self.selected_vertices:
                 if vertex1 == vertex2:
                     continue
                 distance = self.instance.distances[vertex1][vertex2]
-                if distance < self.objectiveValue:
-                    self.objectiveValue = distance
-        return self.objectiveValue
+                if distance < self.objective_value:
+                    self.objective_value = distance
+        return self.objective_value
 
     def reevaluate(self) -> None:
-        self.objectiveValue = self.instance.sortedEdges[0].distance * 10
-        for vertex1 in self.selectedVertices:
-            for vertex2 in self.selectedVertices:
+        self.objective_value = self.instance.sorted_edges[0].distance * 10
+        for vertex1 in self.selected_vertices:
+            for vertex2 in self.selected_vertices:
                 if vertex1 == vertex2:
                     continue
                 distance = self.instance.distances[vertex1][vertex2]
-                if distance < self.objectiveValue:
-                    self.objectiveValue = distance
-                    self.minDistanceVertex1 = vertex1
-                    self.minDistanceVertex2 = vertex2
+                if distance < self.objective_value:
+                    self.objective_value = distance
+                    self.min_distance_vertex1 = vertex1
+                    self.min_distance_vertex2 = vertex2
 

@@ -1,5 +1,4 @@
 """Core data structures for the stochastic critical distance problem."""
-
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -10,7 +9,7 @@ class Candidate:
     """Candidate node considered during construction or improvement steps."""
 
     vertex: int
-    nearestVertex: int
+    nearest_vertex: int
     distance: float
 
 
@@ -34,18 +33,11 @@ class Edge:
 class TestCase:
     """Execution parameters loaded from the benchmark configuration file."""
 
-    instanceName: str
+    instance_name: str
     seed: int
-    maxTime: int
-    betaConstruction: float
-    betaLocalSearch: float
-    maxIterations: int
-    reliabilityThreshold: float
-    shortSimulationRuns: int
-    longSimulationRuns: int
-    variance: float
-    deterministic: bool
-    skipPenaltyCost: bool
+    max_time: int
+    beta_construction: float
+    beta_local_search: float
+    max_iterations: int
     weight: float
-    inverseRatio: float
 
