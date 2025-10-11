@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 
 
 @dataclass(slots=True)
@@ -34,6 +35,7 @@ class TestCase:
     """Execution parameters loaded from the benchmark configuration file."""
 
     instance_name: str
+    instance_path: Path
     seed: int
     max_time: int
     beta_construction: float

@@ -1,2 +1,2 @@
 # instance_name	seed	max_time	beta_construction	beta_local_search	max_iterations	weight	alpha_step
-sample_instance.txt	0	1	0.5	0.5	10	0.7	0.05
+SOM-a_11_n50_b02_m5.txt	0	2	0.5	0.5	20	0.7	0.05

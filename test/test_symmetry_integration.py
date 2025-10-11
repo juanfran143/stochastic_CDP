@@ -7,6 +7,7 @@ from pathlib import Path
 import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
+INSTANCES_DIR = (ROOT / "Instances").resolve()
 sys.path.append(str(ROOT / "CDP"))
 
 from Instance import Instance
@@ -177,6 +178,36 @@ class TestConfigurationLoading(unittest.TestCase):
         self.assertEqual(len(cases), 2)
         self.assertAlmostEqual(cases[0].alpha_step, DEFAULT_ALPHA_STEP)
         self.assertAlmostEqual(cases[1].alpha_step, 0.2)
+        for case in cases:
+            self.assertEqual(case.instance_path.name, "sample_instance.txt")
+
+    def test_load_test_cases_prefers_instances_folder(self) -> None:
+        config_name = "temp_instances"
+        config_path = ROOT / "test" / f"{config_name}.txt"
+        instance_name = "SOM-a_11_n50_b02_m5.txt"
+        config_path.write_text(
+            "\n".join(
+                [
+                    "# instance\tseed\tmax_time\tbeta_c\tbeta_ls\tmax_iter\tweight",
+                    f"{instance_name}\t0\t1\t0.5\t0.5\t10\t0.7",
+                ]
+            ),
+            encoding="utf-8",
+        )
+        original_cwd = Path.cwd()
+        try:
+            os.chdir(ROOT / "CDP")
+            cases = load_test_cases(config_name)
+        finally:
+            os.chdir(original_cwd)
+            if config_path.exists():
+                config_path.unlink()
+        self.assertEqual(len(cases), 1)
+        resolved_path = cases[0].instance_path
+        self.assertTrue(resolved_path.exists())
+        self.assertTrue(resolved_path.is_file())
+        self.assertEqual(resolved_path.name, instance_name)
+        self.assertEqual(resolved_path.parent, INSTANCES_DIR)
 
 
 if __name__ == "__main__":  # pragma: no cover
