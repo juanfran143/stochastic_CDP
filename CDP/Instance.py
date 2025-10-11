@@ -15,11 +15,11 @@ class Instance:
 
     path: str
     name: str = field(init=False)
-    nodeCount: int = field(init=False, default=0)
-    minCapacity: float = field(init=False, default=0)
+    node_count: int = field(init=False, default=0)
+    min_capacity: float = field(init=False, default=0)
     capacities: List[float] = field(init=False, default_factory=list)
     distances: List[List[float]] = field(init=False, default_factory=list)
-    sortedEdges: List[Edge] = field(init=False, default_factory=list)
+    sorted_edges: List[Edge] = field(init=False, default_factory=list)
 
     def __post_init__(self) -> None:
         self.name = Path(self.path).name
@@ -32,25 +32,25 @@ class Instance:
         if len(lines) < 3:
             raise ValueError("Instance file is incomplete.")
 
-        self.nodeCount = int(lines[0])
-        self.minCapacity = float(lines[1])
+        self.node_count = int(lines[0])
+        self.min_capacity = float(lines[1])
         self.capacities = [float(value) for value in lines[2].split("\t")]
-        if len(self.capacities) != self.nodeCount:
+        if len(self.capacities) != self.node_count:
             raise ValueError("Capacity vector length does not match node count.")
 
         self.distances = [
-            [0.0 for _ in range(self.nodeCount)] for _ in range(self.nodeCount)
+            [0.0 for _ in range(self.node_count)] for _ in range(self.node_count)
         ]
-        self.sortedEdges = []
+        self.sorted_edges = []
 
-        for rowIndex, rawRow in enumerate(lines[3:]):
-            values = [float(value) for value in rawRow.split("\t")]
-            if len(values) != self.nodeCount:
+        for row_index, raw_row in enumerate(lines[3:]):
+            values = [float(value) for value in raw_row.split("\t")]
+            if len(values) != self.node_count:
                 raise ValueError("Distance matrix row length mismatch.")
-            for columnIndex, distance in enumerate(values):
+            for column_index, distance in enumerate(values):
                 if distance:
-                    self.distances[rowIndex][columnIndex] = distance
-                    self.sortedEdges.append(Edge(rowIndex, columnIndex, distance))
+                    self.distances[row_index][column_index] = distance
+                    self.sorted_edges.append(Edge(row_index, column_index, distance))
 
-        self.sortedEdges.sort(key=lambda edge: edge.distance, reverse=True)
+        self.sorted_edges.sort(key=lambda edge: edge.distance, reverse=True)
 

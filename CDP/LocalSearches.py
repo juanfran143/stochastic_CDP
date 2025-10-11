@@ -11,91 +11,56 @@ from objects import Candidate, WeightedCandidate
 
 def tabu_search(
     initial_solution: Solution,
-    candidateList: List[Candidate],
-    maxIterations: int,
+    candidate_list: List[Candidate],
+    max_iterations: int,
     heuristic: ConstructiveHeuristic,
 ) -> Tuple[Solution, List[Candidate]]:
-    bestSolution = initial_solution.copy()
-    currentSolution = initial_solution.copy()
-    iterationsWithoutImprovement = 0
+    best_solution = initial_solution.copy()
+    current_solution = initial_solution.copy()
+    iterations_without_improvement = 0
 
-    while iterationsWithoutImprovement < maxIterations:
-        removedVertex = currentSolution.selectedVertices[0]
-        currentSolution.remove_vertex(removedVertex)
-        heuristic.recalculate_candidate_list(currentSolution, candidateList, removedVertex)
-        currentSolution = heuristic.partial_reconstruction(currentSolution, candidateList)
-        currentSolution.reevaluate()
-        heuristic.insert_candidate(candidateList, currentSolution, removedVertex)
+    while iterations_without_improvement < max_iterations:
+        removed_vertex = current_solution.selected_vertices[0]
+        current_solution.remove_vertex(removed_vertex)
+        heuristic.recalculate_candidate_list(current_solution, candidate_list, removed_vertex)
+        current_solution = heuristic.partial_reconstruction(current_solution, candidate_list)
+        current_solution.reevaluate()
+        heuristic.insert_candidate(candidate_list, current_solution, removed_vertex)
 
-        if currentSolution.objectiveValue > bestSolution.objectiveValue:
-            bestSolution = currentSolution.copy()
-            iterationsWithoutImprovement = 0
+        if current_solution.objective_value > best_solution.objective_value:
+            best_solution = current_solution.copy()
+            iterations_without_improvement = 0
         else:
-            iterationsWithoutImprovement += 1
+            iterations_without_improvement += 1
 
-    return bestSolution, candidateList
+    return best_solution, candidate_list
 
 
 def tabu_search_capacity(
     initial_solution: Solution,
-    candidateList: List[WeightedCandidate],
-    maxIterations: int,
+    candidate_list: List[WeightedCandidate],
+    max_iterations: int,
     heuristic: ConstructiveHeuristic,
 ) -> Tuple[Solution, List[WeightedCandidate]]:
-    bestSolution = initial_solution.copy()
-    currentSolution = initial_solution.copy()
-    iterationsWithoutImprovement = 0
+    best_solution = initial_solution.copy()
+    current_solution = initial_solution.copy()
+    iterations_without_improvement = 0
 
-    while iterationsWithoutImprovement < maxIterations:
-        removedVertex = currentSolution.selectedVertices[0]
-        currentSolution.remove_vertex(removedVertex)
-        heuristic.recalculate_weighted_candidate_list(currentSolution, candidateList, removedVertex)
-        currentSolution = heuristic.partial_reconstruction_capacity(currentSolution, candidateList)
-        currentSolution.reevaluate()
-        heuristic.insert_weighted_candidate(candidateList, currentSolution, removedVertex)
+    while iterations_without_improvement < max_iterations:
+        removed_vertex = current_solution.selected_vertices[0]
+        current_solution.remove_vertex(removed_vertex)
+        heuristic.recalculate_weighted_candidate_list(current_solution, candidate_list, removed_vertex)
+        current_solution = heuristic.partial_reconstruction_capacity(current_solution, candidate_list)
+        current_solution.reevaluate()
+        heuristic.insert_weighted_candidate(candidate_list, current_solution, removed_vertex)
 
-        if currentSolution.objectiveValue > bestSolution.objectiveValue:
-            bestSolution = currentSolution.copy()
-            iterationsWithoutImprovement = 0
+        if current_solution.objective_value > best_solution.objective_value:
+            best_solution = current_solution.copy()
+            iterations_without_improvement = 0
         else:
-            iterationsWithoutImprovement += 1
+            iterations_without_improvement += 1
 
-    return bestSolution, candidateList
-
-
-def tabu_search_capacity_simulation(
-    initial_solution: Solution,
-    candidateList: List[WeightedCandidate],
-    maxIterations: int,
-    heuristic: ConstructiveHeuristic,
-    simulation: "Simheuristic",
-    reliabilityThreshold: float,
-) -> Tuple[Solution, List[WeightedCandidate]]:
-    bestSolution = initial_solution.copy()
-    currentSolution = initial_solution.copy()
-    iterationsWithoutImprovement = 0
-
-    while iterationsWithoutImprovement < maxIterations:
-        removedVertex = currentSolution.selectedVertices[0]
-        currentSolution.remove_vertex(removedVertex)
-        heuristic.recalculate_weighted_candidate_list(currentSolution, candidateList, removedVertex)
-        currentSolution = heuristic.partial_reconstruction_simulation(
-            currentSolution, candidateList, simulation, reliabilityThreshold
-        )
-        currentSolution.reevaluate()
-        heuristic.insert_weighted_candidate(candidateList, currentSolution, removedVertex)
-
-        if currentSolution.objectiveValue > bestSolution.objectiveValue:
-            bestSolution = currentSolution.copy()
-            iterationsWithoutImprovement = 0
-        else:
-            iterationsWithoutImprovement += 1
-
-    return bestSolution, candidateList
+    return best_solution, candidate_list
 
 
-from typing import TYPE_CHECKING
-
-if TYPE_CHECKING:  # pragma: no cover
-    from simheuristic import Simheuristic
 

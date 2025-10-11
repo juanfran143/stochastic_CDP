@@ -1,2 +1,2 @@
-# instanceName	seed	maxTime	betaConstruction	betaLocalSearch	maxIterations	reliabilityThreshold	shortSimulationRuns	longSimulationRuns	variance	deterministic	skipPenaltyCost	weight	inverseRatio
-sample_instance.txt	0	1	0.5	0.5	10	0.8	5	10	0.1	True	-	0.7	0.0
+# instance_name	seed	max_time	beta_construction	beta_local_search	max_iterations	weight
+sample_instance.txt	0	1	0.5	0.5	10	0.7

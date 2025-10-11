@@ -1,4 +1,4 @@
-"""Entry point for executing stochastic critical distance problem experiments."""
+"""Entry point for executing deterministic critical distance problem experiments."""
 
 from __future__ import annotations
 
@@ -11,13 +11,9 @@ from typing import Iterable, List, Tuple
 
 from ConstructiveHeuristic import ConstructiveHeuristic
 from Instance import Instance
-from LocalSearches import (
-    tabu_search_capacity,
-    tabu_search_capacity_simulation,
-)
+from LocalSearches import tabu_search_capacity
 from Solution import Solution
 from objects import TestCase, WeightedCandidate
-from simheuristic import Simheuristic
 
 
 @dataclass
@@ -36,82 +32,50 @@ class SummaryFile:
 
 
 def clone_weighted_candidates(candidates: Iterable[WeightedCandidate]) -> List[WeightedCandidate]:
-    return [WeightedCandidate(candidate.vertex, candidate.nearestVertex, candidate.distance, candidate.score) for candidate in candidates]
+    return [
+        WeightedCandidate(candidate.vertex, candidate.nearest_vertex, candidate.distance, candidate.score)
+        for candidate in candidates
+    ]
 
 
-def load_test_cases(testName: str) -> List[TestCase]:
-    filePath = Path("test") / f"{testName}.txt"
-    testCases: List[TestCase] = []
-    with filePath.open("r", encoding="utf-8") as handle:
-        for rawLine in handle:
-            line = rawLine.strip()
+def load_test_cases(test_name: str) -> List[TestCase]:
+    file_path = Path("test") / f"{test_name}.txt"
+    test_cases: List[TestCase] = []
+    with file_path.open("r", encoding="utf-8") as handle:
+        for raw_line in handle:
+            line = raw_line.strip()
             if not line or line.startswith("#"):
                 continue
             values = line.split("\t")
-            deterministicFlag = values[10].lower() == "true"
-            skipPenalty = values[11].lower() == "true" if values[11] != "-" else False
-            testCases.append(
+            if len(values) != 7:
+                raise ValueError(
+                    "Each test case line must contain exactly seven tab-separated values."
+                )
+            test_cases.append(
                 TestCase(
-                    instanceName=values[0],
+                    instance_name=values[0],
                     seed=int(values[1]),
-                    maxTime=int(values[2]),
-                    betaConstruction=float(values[3]),
-                    betaLocalSearch=float(values[4]),
-                    maxIterations=int(values[5]),
-                    reliabilityThreshold=float(values[6]),
-                    shortSimulationRuns=int(values[7]),
-                    longSimulationRuns=int(values[8]),
-                    variance=float(values[9]),
-                    deterministic=deterministicFlag,
-                    skipPenaltyCost=skipPenalty,
-                    weight=float(values[12]),
-                    inverseRatio=float(values[13]),
+                    max_time=int(values[2]),
+                    beta_construction=float(values[3]),
+                    beta_local_search=float(values[4]),
+                    max_iterations=int(values[5]),
+                    weight=float(values[6]),
                 )
             )
-    return testCases
+    return test_cases
 
 
-def write_deterministic_summary(solution: Solution, testCase: TestCase, writer: SummaryFile) -> None:
+def write_deterministic_summary(solution: Solution, test_case: TestCase, writer: SummaryFile) -> None:
     writer.append(
         "\t".join(
             [
-                testCase.instanceName,
-                f"{testCase.betaConstruction}",
-                f"{testCase.seed}",
-                f"{solution.objectiveValue}",
+                test_case.instance_name,
+                f"{test_case.beta_local_search}",
+                f"{test_case.seed}",
+                f"{solution.objective_value}",
                 f"{solution.time}",
                 f"{solution.capacity}",
-                f"{testCase.inverseRatio}",
-                f"{testCase.weight}",
-            ]
-        )
-    )
-
-
-def write_stochastic_summary(
-    solution: Solution,
-    testCase: TestCase,
-    writer: SummaryFile,
-    simulationType: str,
-    skipPenalty: bool,
-) -> None:
-    writer.append(
-        "\t".join(
-            [
-                testCase.instanceName,
-                f"{testCase.betaConstruction}",
-                f"{solution.objectiveValue}",
-                f"{solution.time}",
-                f"{solution.capacity}",
-                f"{solution.reliability[1 if skipPenalty else 2]}",
-                f"{testCase.variance}",
-                f"{solution.objectiveValue if skipPenalty else solution.meanStochasticObjective[2]}",
-                f"{solution.stochasticCapacity[1 if skipPenalty else 2]}",
-                f"{testCase.deterministic}",
-                simulationType,
-                f"{testCase.inverseRatio}",
-                f"{testCase.weight}",
-                f"{testCase.seed}",
+                f"{test_case.weight}",
             ]
         )
     )
@@ -119,189 +83,88 @@ def write_stochastic_summary(
 
 def deterministic_multi_start(
     initial: Tuple[Solution, List[WeightedCandidate]],
-    testCase: TestCase,
+    test_case: TestCase,
     heuristic: ConstructiveHeuristic,
 ) -> Tuple[Solution, List[WeightedCandidate]]:
-    initial_solution, initialCandidates = initial
-    if 0.0 <= testCase.weight <= 1.0:
-        weightSamples = {testCase.weight: 0.0}
+    initial_solution, initial_candidates = initial
+    if 0.0 <= test_case.weight <= 1.0:
+        weight_samples = {test_case.weight: 0.0}
     else:
-        weightSamples = {step / 10: 0.0 for step in range(5, 11)}
-    for _ in range(10):
-        for weight in weightSamples:
-            candidateSolution, _ = heuristic.construct_biased_fixed_weight_solution(weight)
-            weightSamples[weight] += candidateSolution.objectiveValue
+        weight_samples = {step / 10: 0.0 for step in range(5, 11)}
 
-    rankedWeights = sorted(weightSamples.items(), key=lambda item: item[1], reverse=True)
-    weightOptions = [rankedWeights[i][0] for i in range(min(3, len(rankedWeights)))]
-    bestSolution = initial_solution.copy()
-    bestCandidates = clone_weighted_candidates(initialCandidates)
+    for _ in range(10):
+        for weight in weight_samples:
+            candidate_solution, _ = heuristic.construct_biased_fixed_weight_solution(weight)
+            weight_samples[weight] += candidate_solution.objective_value
+
+    ranked_weights = sorted(weight_samples.items(), key=lambda item: item[1], reverse=True)
+    weight_options = [ranked_weights[i][0] for i in range(min(3, len(ranked_weights)))]
+    best_solution = initial_solution.copy()
+    best_candidates = clone_weighted_candidates(initial_candidates)
 
     start = time.process_time()
-    while time.process_time() - start < testCase.maxTime:
-        if 0.0 <= testCase.weight <= 1.0:
-            sampledWeight = testCase.weight
+    while time.process_time() - start < test_case.max_time:
+        if 0.0 <= test_case.weight <= 1.0:
+            sampled_weight = test_case.weight
         else:
-            randomValue = random.random()
-            if randomValue < 0.7:
-                reference = weightOptions[0]
-            elif randomValue < 0.9 and len(weightOptions) > 1:
-                reference = weightOptions[1]
+            random_value = random.random()
+            if random_value < 0.7:
+                reference = weight_options[0]
+            elif random_value < 0.9 and len(weight_options) > 1:
+                reference = weight_options[1]
             else:
-                reference = weightOptions[min(2, len(weightOptions) - 1)]
+                reference = weight_options[min(2, len(weight_options) - 1)]
 
             lower = max(reference - 0.05, 0.0)
             upper = min(reference + 0.05, 1.0)
-            sampledWeight = random.uniform(lower, upper)
+            sampled_weight = random.uniform(lower, upper)
 
-        candidateSolution, candidateList = heuristic.construct_biased_fixed_weight_solution(sampledWeight)
-        candidateSolution, candidateList = tabu_search_capacity(
-            candidateSolution, candidateList, testCase.maxIterations, heuristic
-        )
-
-        if candidateSolution.objectiveValue > bestSolution.objectiveValue:
-            bestSolution = candidateSolution.copy()
-            bestSolution.time = time.process_time() - start
-            bestCandidates = clone_weighted_candidates(candidateList)
-
-    longSimulation = Simheuristic(testCase.longSimulationRuns, testCase.variance)
-    longSimulation.run_reliability_simulation(bestSolution)
-    longSimulation.run_stochastic_evaluation(bestSolution, bestCandidates)
-    return bestSolution, bestCandidates
-
-
-def stochastic_multi_start(
-    initial: Tuple[Solution, List[WeightedCandidate]],
-    testCase: TestCase,
-    heuristic: ConstructiveHeuristic,
-) -> Tuple[Solution, List[WeightedCandidate]]:
-    initial_solution, initialCandidates = initial
-    smallSimulation = Simheuristic(testCase.shortSimulationRuns, testCase.variance)
-    smallSimulation.run_stochastic_evaluation(initial_solution, initialCandidates)
-
-    elite: List[Tuple[Solution, List[WeightedCandidate]]] = [
-        (initial_solution.copy(), clone_weighted_candidates(initialCandidates))
-    ]
-    bestSolution = initial_solution.copy()
-    bestCandidates = clone_weighted_candidates(initialCandidates)
-
-    start = time.process_time()
-    while time.process_time() - start < testCase.maxTime:
-        candidateSolution, candidateList = heuristic.construct_biased_capacity_solution()
-        candidateSolution, candidateList = tabu_search_capacity(
-            candidateSolution, candidateList, testCase.maxIterations, heuristic
-        )
-
-        if candidateSolution.objectiveValue > bestSolution.objectiveValue:
-            smallSimulation.run_stochastic_evaluation(candidateSolution, candidateList)
-            if candidateSolution.meanStochasticObjective[2] >= bestSolution.meanStochasticObjective[2]:
-                bestSolution = candidateSolution.copy()
-                bestSolution.time = time.process_time() - start
-                bestCandidates = clone_weighted_candidates(candidateList)
-                elite.append((bestSolution.copy(), clone_weighted_candidates(candidateList)))
-
-    longSimulation = Simheuristic(testCase.longSimulationRuns, testCase.variance)
-    for solution, candidates in elite:
-        longSimulation.run_stochastic_evaluation(solution, candidates)
-
-    bestSolution, bestCandidates = max(
-        elite,
-        key=lambda pair: pair[0].meanStochasticObjective[2],
-    )
-    return bestSolution, bestCandidates
-
-
-def stochastic_multi_start_simulation(
-    testCase: TestCase,
-    heuristic: ConstructiveHeuristic,
-) -> Tuple[Solution, List[WeightedCandidate]]:
-    exploratorySimulation = Simheuristic(20, testCase.variance)
-    candidateSolution, candidateList = heuristic.construct_biased_capacity_simulation_solution(
-        exploratorySimulation, 0.9
-    )
-    candidateSolution, candidateList = tabu_search_capacity_simulation(
-        candidateSolution,
-        candidateList,
-        testCase.maxIterations,
-        heuristic,
-        exploratorySimulation,
-        0.9,
-    )
-
-    smallSimulation = Simheuristic(testCase.shortSimulationRuns, testCase.variance)
-    smallSimulation.run_reliability_simulation(candidateSolution)
-
-    elite: List[Tuple[Solution, List[WeightedCandidate]]] = [
-        (candidateSolution.copy(), clone_weighted_candidates(candidateList))
-    ]
-    backup: List[Tuple[Solution, List[WeightedCandidate]]] = []
-    reliabilityTargetReached = candidateSolution.reliability[1] >= testCase.reliabilityThreshold
-
-    start = time.process_time()
-    while time.process_time() - start < testCase.maxTime:
-        newSolution, newCandidates = heuristic.construct_biased_capacity_simulation_solution(
-            exploratorySimulation, 0.9
-        )
-        newSolution, newCandidates = tabu_search_capacity_simulation(
-            newSolution,
-            newCandidates,
-            testCase.maxIterations,
+        candidate_solution, candidate_list = heuristic.construct_biased_fixed_weight_solution(sampled_weight)
+        candidate_solution, candidate_list = tabu_search_capacity(
+            candidate_solution,
+            candidate_list,
+            test_case.max_iterations,
             heuristic,
-            exploratorySimulation,
-            0.9,
         )
 
-        if newSolution.objectiveValue > candidateSolution.objectiveValue:
-            smallSimulation.run_reliability_simulation(newSolution)
-            if newSolution.reliability[1] >= testCase.reliabilityThreshold:
-                reliabilityTargetReached = True
-                candidateSolution = newSolution.copy()
-                candidateSolution.time = time.process_time() - start
-                candidateList = clone_weighted_candidates(newCandidates)
-                elite.append((candidateSolution.copy(), clone_weighted_candidates(newCandidates)))
-            elif not reliabilityTargetReached:
-                backup.append((newSolution.copy(), clone_weighted_candidates(newCandidates)))
+        if candidate_solution.objective_value > best_solution.objective_value:
+            best_solution = candidate_solution.copy()
+            best_solution.time = time.process_time() - start
+            best_candidates = clone_weighted_candidates(candidate_list)
 
-    longSimulation = Simheuristic(testCase.longSimulationRuns, testCase.variance)
-    if not reliabilityTargetReached and backup:
-        for solution, _ in backup:
-            longSimulation.run_reliability_simulation(solution)
-        bestSolution, bestCandidates = max(backup, key=lambda pair: pair[0].reliability[1])
-    else:
-        for solution, _ in elite:
-            longSimulation.run_reliability_simulation(solution)
-        bestSolution, bestCandidates = max(elite, key=lambda pair: pair[0].reliability[1])
+    if best_solution.time == 0.0:
+        best_solution.time = time.process_time() - start
 
-    return bestSolution, bestCandidates
+    return best_solution, best_candidates
 
 
-def execute_test_case(testCase: TestCase) -> Tuple[Solution, List[WeightedCandidate]]:
-    instancePath = Path("CDP") / testCase.instanceName
-    instance = Instance(str(instancePath))
-    if testCase.inverseRatio:
-        instance.minCapacity = sum(instance.capacities) * testCase.inverseRatio
-
-    heuristic = ConstructiveHeuristic(0.0, testCase.betaConstruction, testCase.betaLocalSearch, instance, testCase.weight)
-
-    if testCase.deterministic:
-        solution, candidates = heuristic.construct_biased_capacity_solution()
-        solution, candidates = tabu_search_capacity(solution, candidates, testCase.maxIterations, heuristic)
-        return deterministic_multi_start((solution, candidates), testCase, heuristic)
-
-    if testCase.skipPenaltyCost:
-        return stochastic_multi_start_simulation(testCase, heuristic)
+def execute_test_case(test_case: TestCase) -> Tuple[Solution, List[WeightedCandidate]]:
+    instance_path = Path("CDP") / test_case.instance_name
+    instance = Instance(str(instance_path))
+    heuristic = ConstructiveHeuristic(
+        0.0,
+        test_case.beta_construction,
+        test_case.beta_local_search,
+        instance,
+        test_case.weight,
+    )
 
     solution, candidates = heuristic.construct_biased_capacity_solution()
-    solution, candidates = tabu_search_capacity(solution, candidates, testCase.maxIterations, heuristic)
-    return stochastic_multi_start((solution, candidates), testCase, heuristic)
+    solution, candidates = tabu_search_capacity(
+        solution,
+        candidates,
+        test_case.max_iterations,
+        heuristic,
+    )
+    return deterministic_multi_start((solution, candidates), test_case, heuristic)
 
 
-def run(testCases: Iterable[TestCase]) -> List[Tuple[TestCase, Solution, List[WeightedCandidate]]]:
+def run(test_cases: Iterable[TestCase]) -> List[Tuple[TestCase, Solution, List[WeightedCandidate]]]:
     results = []
-    for testCase in testCases:
-        random.seed(testCase.seed)
-        solution, candidates = execute_test_case(testCase)
-        results.append((testCase, solution, candidates))
+    for test_case in test_cases:
+        random.seed(test_case.seed)
+        solution, candidates = execute_test_case(test_case)
+        results.append((test_case, solution, candidates))
     return results
 
 
@@ -316,27 +179,15 @@ def main() -> None:
     results = run(tests)
     perform_sanity_check(results)
 
-    stochasticWriter = SummaryFile(
-        Path("output") / "ResumeOutputs_paper_2.txt",
-        "Instance\tbetaLS\tCostSol\ttime\tCapacity\treliability\tvariance\tstochastic_of\tstochastic_capacity\tdeterministic\ttype_simulation\tinversa\tweight\tseed\n",
-    )
-    deterministicWriter = SummaryFile(
-        Path("output") / "ResumeOutputs_def_STOCHASTIC.txt",
-        "Instance\tbetaLS\tseed\tCostSol\ttime\tCapacity\tinversa\tweight\n",
+    deterministic_writer = SummaryFile(
+        Path("output") / "deterministic_summary.txt",
+        "Instance\tbeta_ls\tseed\tcost\ttime\tcapacity\tweight\n",
     )
 
-    for testCase, solution, candidates in results:
-        if testCase.deterministic:
-            write_deterministic_summary(solution, testCase, deterministicWriter)
-            write_stochastic_summary(solution, testCase, stochasticWriter, "True", True)
-            write_stochastic_summary(solution, testCase, stochasticWriter, "False", False)
-        else:
-            skipPenalty = testCase.skipPenaltyCost
-            simulationLabel = "True" if skipPenalty else "False"
-            write_stochastic_summary(solution, testCase, stochasticWriter, simulationLabel, skipPenalty)
+    for test_case, solution, _ in results:
+        write_deterministic_summary(solution, test_case, deterministic_writer)
 
 
 if __name__ == "__main__":
     main()
     sys.exit(0)
-
