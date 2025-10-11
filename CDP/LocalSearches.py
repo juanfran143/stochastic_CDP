@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from typing import List, Tuple
 
 from ConstructiveHeuristic import ConstructiveHeuristic
@@ -27,12 +28,25 @@ def tabu_search(
         current_solution.reevaluate()
         heuristic.insert_candidate(candidate_list, current_solution, removed_vertex)
 
-        if current_solution.objective_value > best_solution.objective_value:
+        improved_dispersion = (
+            current_solution.objective_value > best_solution.objective_value + 1e-9
+        )
+        same_dispersion = math.isclose(
+            current_solution.objective_value,
+            best_solution.objective_value,
+            rel_tol=1e-9,
+            abs_tol=1e-9,
+        )
+        better_symmetry = (
+            current_solution.symmetry_penalty < best_solution.symmetry_penalty - 1e-9
+        )
+        if improved_dispersion or (same_dispersion and better_symmetry):
             best_solution = current_solution.copy()
             iterations_without_improvement = 0
         else:
             iterations_without_improvement += 1
 
+    best_solution.reevaluate()
     return best_solution, candidate_list
 
 
@@ -54,12 +68,25 @@ def tabu_search_capacity(
         current_solution.reevaluate()
         heuristic.insert_weighted_candidate(candidate_list, current_solution, removed_vertex)
 
-        if current_solution.objective_value > best_solution.objective_value:
+        improved_dispersion = (
+            current_solution.objective_value > best_solution.objective_value + 1e-9
+        )
+        same_dispersion = math.isclose(
+            current_solution.objective_value,
+            best_solution.objective_value,
+            rel_tol=1e-9,
+            abs_tol=1e-9,
+        )
+        better_symmetry = (
+            current_solution.symmetry_penalty < best_solution.symmetry_penalty - 1e-9
+        )
+        if improved_dispersion or (same_dispersion and better_symmetry):
             best_solution = current_solution.copy()
             iterations_without_improvement = 0
         else:
             iterations_without_improvement += 1
 
+    best_solution.reevaluate()
     return best_solution, candidate_list
 
 

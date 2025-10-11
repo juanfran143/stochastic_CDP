@@ -20,6 +20,8 @@ class Solution:
     objective_value: float = field(init=False)
     capacity: float = 0.0
     time: float = 0.0
+    symmetry_penalty: float = 0.0
+    symmetry_breakdown: Dict[Tuple[str, str], float] = field(default_factory=dict)
     reliability: Dict[int, float] = field(default_factory=lambda: {1: 0.0, 2: 0.0})
     stochastic_capacity: Dict[int, float] = field(default_factory=lambda: {1: 0.0, 2: 0.0})
     stochastic_objective: Dict[int, float] = field(default_factory=lambda: {1: 0.0, 2: 0.0})
@@ -36,6 +38,8 @@ class Solution:
         clone.objective_value = self.objective_value
         clone.capacity = self.capacity
         clone.time = self.time
+        clone.symmetry_penalty = self.symmetry_penalty
+        clone.symmetry_breakdown = dict(self.symmetry_breakdown)
         clone.reliability = dict(self.reliability)
         clone.stochastic_capacity = dict(self.stochastic_capacity)
         clone.stochastic_objective = dict(self.stochastic_objective)
@@ -77,6 +81,7 @@ class Solution:
                 distance = self.instance.distances[vertex1][vertex2]
                 if distance < self.objective_value:
                     self.objective_value = distance
+        self.evaluate_symmetry()
         return self.objective_value
 
     def reevaluate(self) -> None:
@@ -90,4 +95,21 @@ class Solution:
                     self.objective_value = distance
                     self.min_distance_vertex1 = vertex1
                     self.min_distance_vertex2 = vertex2
+        self.evaluate_symmetry()
+
+    def evaluate_symmetry(self) -> float:
+        """Update and return the symmetry penalty for the current selection."""
+
+        penalty, breakdown = self.instance.symmetry_penalty(
+            self.selected_vertices, return_breakdown=True
+        )
+        self.symmetry_penalty = penalty
+        self.symmetry_breakdown = breakdown
+        return self.symmetry_penalty
+
+    def weighted_objective(self, alpha: float) -> float:
+        """Return the scalarised objective balancing dispersion and symmetry."""
+
+        dispersion_value = self.objective_value if self.selected_vertices else 0.0
+        return alpha * dispersion_value - (1 - alpha) * self.symmetry_penalty
 
