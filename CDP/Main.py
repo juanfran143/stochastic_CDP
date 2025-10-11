@@ -42,15 +42,22 @@ def clone_weighted_candidates(candidates: Iterable[WeightedCandidate]) -> List[W
 
 
 def _generate_indexed_palette(node_count: int) -> List[str]:
-    """Return a deterministic list of distinct colours keyed by index."""
+    """Return a deterministic list of colours cycling through a small palette."""
 
     if node_count <= 0:
         return []
-    hues = [index / max(node_count, 1) for index in range(node_count)]
-    colours = []
+
+    # Limit the number of distinct colours so that symmetry penalties are not
+    # always triggered by default. Reuse up to four tones (or fewer when the
+    # instance has less vertices) and repeat them deterministically.
+    unique_colour_count = min(4, node_count) if node_count >= 3 else node_count
+    hues = [index / max(unique_colour_count, 1) for index in range(unique_colour_count)]
+    base_colours: List[str] = []
     for hue in hues:
         r, g, b = colorsys.hsv_to_rgb(hue, 0.65, 0.92)
-        colours.append(f"#{int(r * 255):02x}{int(g * 255):02x}{int(b * 255):02x}")
+        base_colours.append(f"#{int(r * 255):02x}{int(g * 255):02x}{int(b * 255):02x}")
+
+    colours = [base_colours[index % unique_colour_count] for index in range(node_count)]
     return colours
 
 
