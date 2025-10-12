@@ -187,6 +187,51 @@ def default_alpha_schedule(step: float = 0.05) -> List[Tuple[float, float]]:
     return schedule
 
 
+def _enforce_monotonic_weighted_front(
+    entries: Iterable[WeightedFrontEntry],
+    *,
+    tolerance: float = 1e-9,
+) -> List[WeightedFrontEntry]:
+    """Filter weighted front entries to ensure a non-increasing penalty sequence.
+
+    Consecutive candidates whose symmetry penalty increases are discarded. When
+    two consecutive entries share the same penalty (within ``tolerance``), only
+    the one achieving the lowest CDP objective (dispersion) is kept.
+    """
+
+    filtered: List[WeightedFrontEntry] = []
+    for entry in entries:
+        penalty = entry.candidate.symmetry_penalty
+        objective = (
+            entry.candidate.dispersion
+            if math.isfinite(entry.candidate.dispersion)
+            else 0.0
+        )
+
+        if not filtered:
+            filtered.append(entry)
+            continue
+
+        last_entry = filtered[-1]
+        last_penalty = last_entry.candidate.symmetry_penalty
+        last_objective = (
+            last_entry.candidate.dispersion
+            if math.isfinite(last_entry.candidate.dispersion)
+            else 0.0
+        )
+
+        if penalty > last_penalty + tolerance:
+            continue
+        if math.isclose(penalty, last_penalty, abs_tol=tolerance):
+            if objective + tolerance < last_objective:
+                filtered[-1] = entry
+            continue
+
+        filtered.append(entry)
+
+    return filtered
+
+
 def generate_weighted_front(
     instance: Instance,
     alpha_pairs: Sequence[Tuple[float, float]],
@@ -221,7 +266,7 @@ def generate_weighted_front(
                 candidate=candidate,
             )
         )
-    return entries
+    return _enforce_monotonic_weighted_front(entries)
 
 
 def analyse_solution(
