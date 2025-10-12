@@ -16,7 +16,12 @@ from Instance import Instance
 from LocalSearches import tabu_search_capacity
 from Solution import Solution
 from objects import TestCase, WeightedCandidate
-from symmetry_integration import analyse_solution, pareto_points_to_rows, plot_pareto_front
+from symmetry_integration import (
+    analyse_solution,
+    pareto_points_to_rows,
+    plot_pareto_front,
+    plot_pareto_history,
+)
 
 
 @dataclass
@@ -253,6 +258,29 @@ def execute_test_case(test_case: TestCase, alpha: float) -> Tuple[Solution, List
     return deterministic_multi_start((solution, candidates), test_case, heuristic, alpha)
 
 
+def compress_pareto_history(
+    history: Iterable[Tuple[float, float, float]],
+    *,
+    tolerance: float = 1e-9,
+) -> List[Tuple[float, float, float]]:
+    """Return the Pareto history without consecutive duplicate entries."""
+
+    compressed: List[Tuple[float, float, float]] = []
+    previous: Tuple[float, float, float] | None = None
+    for alpha, dispersion, penalty in history:
+        if previous is not None:
+            _, prev_dispersion, prev_penalty = previous
+            if math.isclose(dispersion, prev_dispersion, abs_tol=tolerance) and math.isclose(
+                penalty, prev_penalty, abs_tol=tolerance
+            ):
+                previous = (alpha, dispersion, penalty)
+                continue
+        entry = (alpha, dispersion, penalty)
+        compressed.append(entry)
+        previous = entry
+    return compressed
+
+
 def run(test_cases: Iterable[TestCase]) -> List[Tuple[TestCase, Solution, List[WeightedCandidate]]]:
     results: List[Tuple[TestCase, Solution, List[WeightedCandidate]]] = []
     for test_case in test_cases:
@@ -331,6 +359,9 @@ def main() -> None:
             ]
         else:
             candidate_pool = [analysis.base_solution, *analysis.epsilon_front]
+        history_data = compress_pareto_history(solution.pareto_history)
+        history_front_size = max(len(history_data) - 1, 0)
+        using_history_front = len(candidate_pool) == 1 and history_front_size > 0
         if candidate_pool:
             best_candidate = min(
                 candidate_pool,
@@ -351,16 +382,30 @@ def main() -> None:
             candidate_pool = [analysis.base_solution]
             best_dispersion = base_dispersion
             best_penalty = base_penalty
-        try:
-            pareto_plot_path = plot_pareto_front(
-                candidate_pool[0],
-                candidate_pool[1:],
-                Path("../output") / f"{test_case.instance_name}_pareto.png",
-                alpha_labels=alpha_labels,
+        if using_history_front:
+            best_history_candidate = min(
+                history_data,
+                key=lambda entry: (entry[2], -entry[1]),
             )
+            best_dispersion = best_history_candidate[1]
+            best_penalty = best_history_candidate[2]
+        try:
+            plot_destination = Path("../output") / f"{test_case.instance_name}_pareto.png"
+            if using_history_front:
+                pareto_plot_path = plot_pareto_history(history_data, plot_destination)
+            else:
+                pareto_plot_path = plot_pareto_front(
+                    candidate_pool[0],
+                    candidate_pool[1:],
+                    plot_destination,
+                    alpha_labels=alpha_labels,
+                )
         except RuntimeError as error:
             pareto_plot_path = None
             plot_error = str(error)
+        frontier_size = (
+            history_front_size if using_history_front else max(len(candidate_pool) - 1, 0)
+        )
         symmetry_writer.append(
             "\t".join(
                 [
@@ -370,7 +415,7 @@ def main() -> None:
                     f"{base_penalty}",
                     f"{best_dispersion}",
                     f"{best_penalty}",
-                    f"{max(len(candidate_pool) - 1, 0)}",
+                    f"{frontier_size}",
                 ]
             )
         )
@@ -381,21 +426,25 @@ def main() -> None:
             f"objetivo_CDP={base_dispersion:.3f}, "
             f"objetivo_simetría={base_penalty:.3f}"
         )
-        rows = pareto_points_to_rows(candidate_pool)
-        if alpha_labels is not None:
-            labels = alpha_labels
+        if using_history_front:
+            rows = [(entry[2], entry[1]) for entry in history_data]
+            labels = [f"α={entry[0]:.2f}" for entry in history_data]
         else:
-            labels = [
-                "Sin simetría",
-                *[f"Iteración {index}" for index in range(1, len(rows))],
-            ]
+            rows = pareto_points_to_rows(candidate_pool)
+            if alpha_labels is not None:
+                labels = alpha_labels
+            else:
+                labels = [
+                    "Sin simetría",
+                    *[f"Iteración {index}" for index in range(1, len(rows))],
+                ]
         for label, (penalty, dispersion) in zip(labels, rows):
             print(
                 "  "
                 f"{label}: objetivo_CDP={dispersion:.3f}, "
                 f"objetivo_simetría={penalty:.3f}"
             )
-        if len(rows) == 1:
+        if not using_history_front and len(rows) == 1:
             print(
                 "  No se encontraron mejoras adicionales en la frontera con las "
                 "combinaciones de α evaluadas."
