@@ -179,9 +179,9 @@ class TestSymmetryIntegration(unittest.TestCase):
             self.assertTrue(generated.exists())
             points = pareto_points_to_rows([base_candidate, *frontier])
             self.assertTrue(points)
-            first_penalty, first_dispersion = points[0]
-            self.assertGreaterEqual(first_penalty, 0.0)
+            first_dispersion, first_penalty = points[0]
             self.assertGreaterEqual(first_dispersion, 0.0)
+            self.assertGreaterEqual(first_penalty, 0.0)
 
     def test_default_alpha_schedule_generates_expected_pairs(self) -> None:
         schedule = default_alpha_schedule(step=0.25)
