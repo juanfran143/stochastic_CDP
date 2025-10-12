@@ -119,7 +119,7 @@ def resolve_instance_path(instance_reference: str) -> tuple[str, Path]:
     if reference_path.is_absolute():
         if not reference_path.exists():
             raise FileNotFoundError(
-                f"No se encontró la instancia solicitada en '{reference_path}'."
+                f"Requested instance '{reference_path}' was not found."
             )
         return reference_path.name, reference_path
 
@@ -130,8 +130,8 @@ def resolve_instance_path(instance_reference: str) -> tuple[str, Path]:
             return reference_path.name, candidate
 
     raise FileNotFoundError(
-        "No se encontró la instancia solicitada. "
-        f"Se buscó en: {', '.join(str((root / reference_path).resolve()) for root in search_roots)}."
+        "Requested instance was not found. "
+        f"Searched in: {', '.join(str((root / reference_path).resolve()) for root in search_roots)}."
     )
 
 
@@ -420,14 +420,14 @@ def main() -> None:
             )
         )
 
-        print(f"Frontera de Pareto para {test_case.instance_name} (seed={test_case.seed}):")
+        print(f"Pareto frontier for {test_case.instance_name} (seed={test_case.seed}):")
         print(
-            "  Referencia heurística sin simetría: "
-            f"objetivo_CDP={base_dispersion:.3f}, "
-            f"objetivo_simetría={base_penalty:.3f}"
+            "  Symmetry-agnostic heuristic reference: "
+            f"cdp_objective={base_dispersion:.3f}, "
+            f"symmetry_penalty={base_penalty:.3f}"
         )
         if using_history_front:
-            rows = [(entry[2], entry[1]) for entry in history_data]
+            rows = [(entry[1], entry[2]) for entry in history_data]
             labels = [f"α={entry[0]:.2f}" for entry in history_data]
         else:
             rows = pareto_points_to_rows(candidate_pool)
@@ -435,24 +435,24 @@ def main() -> None:
                 labels = alpha_labels
             else:
                 labels = [
-                    "Sin simetría",
-                    *[f"Iteración {index}" for index in range(1, len(rows))],
+                    "Baseline",
+                    *[f"Iteration {index}" for index in range(1, len(rows))],
                 ]
-        for label, (penalty, dispersion) in zip(labels, rows):
+        for label, (dispersion, penalty) in zip(labels, rows):
             print(
                 "  "
-                f"{label}: objetivo_CDP={dispersion:.3f}, "
-                f"objetivo_simetría={penalty:.3f}"
+                f"{label}: cdp_objective={dispersion:.3f}, "
+                f"symmetry_penalty={penalty:.3f}"
             )
         if not using_history_front and len(rows) == 1:
             print(
-                "  No se encontraron mejoras adicionales en la frontera con las "
-                "combinaciones de α evaluadas."
+                "  No additional improvements were found on the frontier for the "
+                "evaluated α combinations."
             )
         if pareto_plot_path is not None:
-            print(f"  Plot guardado en: {pareto_plot_path}")
+            print(f"  Plot saved to: {pareto_plot_path}")
         elif plot_error:
-            print(f"  No se generó plot: {plot_error}")
+            print(f"  Plot was not generated: {plot_error}")
 
 
 if __name__ == "__main__":

@@ -290,14 +290,14 @@ def analyse_solution(
 
 
 def pareto_points_to_rows(candidates: Iterable[CandidateSolution]) -> List[Tuple[float, float]]:
-    """Return symmetry/CDP objective pairs for the provided candidates."""
+    """Return CDP/symmetry objective pairs for the provided candidates."""
 
     rows: List[Tuple[float, float]] = []
     for candidate in candidates:
         dispersion = (
             candidate.dispersion if math.isfinite(candidate.dispersion) else 0.0
         )
-        rows.append((candidate.symmetry_penalty, dispersion))
+        rows.append((dispersion, candidate.symmetry_penalty))
     return rows
 
 
@@ -337,32 +337,32 @@ def plot_pareto_front(
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
     plt.figure(figsize=(8, 5))
-    penalties = [row[0] for row in rows]
-    dispersions = [row[1] for row in rows]
-    plt.plot(penalties, dispersions, marker="o", linestyle="-", color="#1f77b4")
+    dispersions = [row[0] for row in rows]
+    penalties = [row[1] for row in rows]
+    plt.plot(dispersions, penalties, marker="o", linestyle="-", color="#1f77b4")
     plt.scatter(
-        penalties[0],
         dispersions[0],
+        penalties[0],
         color="#d62728",
         marker="s",
         s=120,
-        label="Punto inicial",
+        label="Initial solution",
         zorder=3,
     )
     if len(rows) > 1:
         plt.scatter(
-            penalties[1:],
             dispersions[1:],
+            penalties[1:],
             color="#2ca02c",
             marker="o",
             s=80,
-            label="Frontera explorada",
+            label="Explored frontier",
             zorder=3,
         )
     if alpha_labels:
         if len(alpha_labels) != len(rows):
             raise ValueError("alpha_labels length must match the number of candidates.")
-        for label, x_val, y_val in zip(alpha_labels, penalties, dispersions):
+        for label, x_val, y_val in zip(alpha_labels, dispersions, penalties):
             plt.annotate(
                 label,
                 (x_val, y_val),
@@ -370,9 +370,9 @@ def plot_pareto_front(
                 xytext=(6, 6),
                 fontsize="small",
             )
-    plt.xlabel("Función objetivo de simetría (penalización)")
-    plt.ylabel("Función objetivo CDP (dispersión)")
-    plt.title("Frontera de Pareto CDP-Simetría")
+    plt.xlabel("CDP objective (dispersion)")
+    plt.ylabel("Symmetry penalty")
+    plt.title("CDP-Symmetry Pareto frontier")
     plt.grid(True, linestyle="--", alpha=0.4)
     plt.legend(loc="best")
     plt.tight_layout()
@@ -402,27 +402,27 @@ def plot_pareto_history(
     labels = [f"α={entry[0]:.2f}" for entry in history]
 
     plt.figure(figsize=(8, 5))
-    plt.plot(penalties, dispersions, marker="o", linestyle="-", color="#1f77b4")
+    plt.plot(dispersions, penalties, marker="o", linestyle="-", color="#1f77b4")
     plt.scatter(
-        penalties[0],
         dispersions[0],
+        penalties[0],
         color="#d62728",
         marker="s",
         s=120,
-        label="Punto inicial",
+        label="Initial solution",
         zorder=3,
     )
     if len(history) > 1:
         plt.scatter(
-            penalties[1:],
             dispersions[1:],
+            penalties[1:],
             color="#2ca02c",
             marker="o",
             s=80,
-            label="Frontera explorada",
+            label="Explored frontier",
             zorder=3,
         )
-    for label, x_val, y_val in zip(labels, penalties, dispersions):
+    for label, x_val, y_val in zip(labels, dispersions, penalties):
         plt.annotate(
             label,
             (x_val, y_val),
@@ -430,9 +430,9 @@ def plot_pareto_history(
             xytext=(6, 6),
             fontsize="small",
         )
-    plt.xlabel("Función objetivo de simetría (penalización)")
-    plt.ylabel("Función objetivo CDP (dispersión)")
-    plt.title("Frontera de Pareto CDP-Simetría")
+    plt.xlabel("CDP objective (dispersion)")
+    plt.ylabel("Symmetry penalty")
+    plt.title("CDP-Symmetry Pareto frontier")
     plt.grid(True, linestyle="--", alpha=0.4)
     plt.legend(loc="best")
     plt.tight_layout()
