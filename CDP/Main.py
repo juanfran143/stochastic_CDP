@@ -190,61 +190,42 @@ def deterministic_multi_start(
     initial: Tuple[Solution, List[WeightedCandidate]],
     test_case: TestCase,
     heuristic: ConstructiveHeuristic,
+    alpha: float,
 ) -> Tuple[Solution, List[WeightedCandidate]]:
     initial_solution, initial_candidates = initial
-    if 0.0 <= test_case.weight <= 1.0:
-        weight_samples = {test_case.weight: 0.0}
-    else:
-        weight_samples = {step / 10: 0.0 for step in range(5, 11)}
-
-    for _ in range(10):
-        for weight in weight_samples:
-            candidate_solution, _ = heuristic.construct_biased_fixed_weight_solution(weight)
-            weight_samples[weight] += candidate_solution.objective_value
-
-    ranked_weights = sorted(weight_samples.items(), key=lambda item: item[1], reverse=True)
-    weight_options = [ranked_weights[i][0] for i in range(min(3, len(ranked_weights)))]
+    initial_solution.reevaluate(alpha)
     best_solution = initial_solution.copy()
+    best_solution.reevaluate(alpha)
     best_candidates = clone_weighted_candidates(initial_candidates)
 
     start = time.process_time()
     while time.process_time() - start < test_case.max_time:
-        if 0.0 <= test_case.weight <= 1.0:
-            sampled_weight = test_case.weight
-        else:
-            random_value = random.random()
-            if random_value < 0.7:
-                reference = weight_options[0]
-            elif random_value < 0.9 and len(weight_options) > 1:
-                reference = weight_options[1]
-            else:
-                reference = weight_options[min(2, len(weight_options) - 1)]
-
-            lower = max(reference - 0.05, 0.0)
-            upper = min(reference + 0.05, 1.0)
-            sampled_weight = random.uniform(lower, upper)
-
-        candidate_solution, candidate_list = heuristic.construct_biased_fixed_weight_solution(sampled_weight)
+        candidate_solution, candidate_list = heuristic.construct_biased_fixed_weight_solution(
+            heuristic.weight
+        )
+        candidate_solution.reevaluate(alpha)
         candidate_solution, candidate_list = tabu_search_capacity(
             candidate_solution,
             candidate_list,
             test_case.max_iterations,
             heuristic,
         )
+        candidate_solution.reevaluate(alpha)
 
-        if candidate_solution.objective_value > best_solution.objective_value:
+        if candidate_solution.objective_value > best_solution.objective_value + 1e-9:
             best_solution = candidate_solution.copy()
             best_solution.time = time.process_time() - start
+            best_solution.reevaluate(alpha)
             best_candidates = clone_weighted_candidates(candidate_list)
 
     if best_solution.time == 0.0:
         best_solution.time = time.process_time() - start
 
-    best_solution.reevaluate()
+    best_solution.reevaluate(alpha)
     return best_solution, best_candidates
 
 
-def execute_test_case(test_case: TestCase) -> Tuple[Solution, List[WeightedCandidate]]:
+def execute_test_case(test_case: TestCase, alpha: float) -> Tuple[Solution, List[WeightedCandidate]]:
     instance_path = test_case.instance_path
     instance = Instance(str(instance_path))
     instance.assign_colours(load_colour_configuration(instance_path, instance.node_count))
@@ -253,7 +234,7 @@ def execute_test_case(test_case: TestCase) -> Tuple[Solution, List[WeightedCandi
         gamma_override=load_gamma_override(instance_path),
     )
     heuristic = ConstructiveHeuristic(
-        0.0,
+        alpha,
         test_case.beta_construction,
         test_case.beta_local_search,
         instance,
@@ -261,22 +242,47 @@ def execute_test_case(test_case: TestCase) -> Tuple[Solution, List[WeightedCandi
     )
 
     solution, candidates = heuristic.construct_biased_capacity_solution()
+    solution.reevaluate(alpha)
     solution, candidates = tabu_search_capacity(
         solution,
         candidates,
         test_case.max_iterations,
         heuristic,
     )
-    solution.reevaluate()
-    return deterministic_multi_start((solution, candidates), test_case, heuristic)
+    solution.reevaluate(alpha)
+    return deterministic_multi_start((solution, candidates), test_case, heuristic, alpha)
 
 
 def run(test_cases: Iterable[TestCase]) -> List[Tuple[TestCase, Solution, List[WeightedCandidate]]]:
-    results = []
+    results: List[Tuple[TestCase, Solution, List[WeightedCandidate]]] = []
     for test_case in test_cases:
         random.seed(test_case.seed)
-        solution, candidates = execute_test_case(test_case)
-        results.append((test_case, solution, candidates))
+        alpha_values: List[float] = []
+        pareto_history: List[Tuple[float, float, float]] = []
+        base_solution: Solution | None = None
+        base_candidates: List[WeightedCandidate] | None = None
+
+        current_alpha = 1.0
+        while True:
+            solution, candidates = execute_test_case(test_case, current_alpha)
+            solution.reevaluate(current_alpha)
+            alpha_values.append(current_alpha)
+            pareto_history.append(
+                (current_alpha, solution.cdp_objective, solution.symmetry_penalty)
+            )
+            if base_solution is None:
+                base_solution = solution
+                base_candidates = clone_weighted_candidates(candidates)
+            current_alpha = max(current_alpha - test_case.alpha_step, 0.0)
+            if math.isclose(alpha_values[-1], 0.0, abs_tol=1e-9):
+                break
+
+        if base_solution is None or base_candidates is None:
+            raise RuntimeError("No feasible solution generated for the provided test case.")
+
+        base_solution.alpha_history = alpha_values
+        base_solution.pareto_history = pareto_history
+        results.append((test_case, base_solution, base_candidates))
     return results
 
 
