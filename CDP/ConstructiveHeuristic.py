@@ -8,7 +8,7 @@ from typing import Dict, List, Tuple
 
 from Instance import Instance
 from Solution import Solution
-from objects import Candidate, WeightedCandidate
+from objects import Candidate, Edge, WeightedCandidate
 
 
 class ConstructiveHeuristic:
@@ -40,7 +40,7 @@ class ConstructiveHeuristic:
     # ------------------------------------------------------------------
     def initial_solution(self) -> Solution:
         solution = Solution(self.instance)
-        edge = self.instance.sorted_edges[self.first_edge_index]
+        edge = self.select_initial_edge()
         solution.add_vertex(edge.vertex1)
         solution.add_vertex(edge.vertex2)
         solution.update_objective(edge.vertex1, edge.vertex2, edge.distance)
@@ -51,6 +51,46 @@ class ConstructiveHeuristic:
         self.max_min_distance = edge.distance
         solution.reevaluate(self.alpha)
         return solution
+
+    def select_initial_edge(self) -> Edge:
+        """Choose the starting edge according to the current ``alpha`` value."""
+
+        if not self.instance.sorted_edges:
+            raise ValueError("Instance does not define any edges.")
+
+        # When no colours are provided we simply return the farthest edge as before.
+        if not getattr(self.instance, "colours", None):
+            return self.instance.sorted_edges[self.first_edge_index]
+
+        max_distance = self.instance.sorted_edges[0].distance or 1.0
+        best_score = -math.inf
+        best_tiebreaker = -math.inf
+        best_index = self.first_edge_index
+
+        for index, edge in enumerate(self.instance.sorted_edges):
+            same_colour = (
+                self.instance.colours[edge.vertex1]
+                == self.instance.colours[edge.vertex2]
+            )
+            colour_score = 1.0 if same_colour else 0.0
+            distance_score = edge.distance / max_distance if max_distance else 0.0
+            colour_weight = 1.0 - self.alpha
+            distance_weight = self.alpha
+            combined_score = colour_weight * colour_score + distance_weight * distance_score
+
+            if (
+                combined_score > best_score
+                or (
+                    math.isclose(combined_score, best_score)
+                    and distance_score > best_tiebreaker
+                )
+            ):
+                best_score = combined_score
+                best_tiebreaker = distance_score
+                best_index = index
+
+        self.first_edge_index = best_index
+        return self.instance.sorted_edges[best_index]
 
     def colour_penalty(self, solution: Solution, vertex: int) -> int:
         if not self.instance.colours or not solution.selected_vertices:
