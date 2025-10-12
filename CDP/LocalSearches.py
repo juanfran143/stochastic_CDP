@@ -17,7 +17,9 @@ def tabu_search(
     heuristic: ConstructiveHeuristic,
 ) -> Tuple[Solution, List[Candidate]]:
     best_solution = initial_solution.copy()
+    best_solution.reevaluate(heuristic.alpha)
     current_solution = initial_solution.copy()
+    current_solution.reevaluate(heuristic.alpha)
     iterations_without_improvement = 0
 
     while iterations_without_improvement < max_iterations:
@@ -25,7 +27,7 @@ def tabu_search(
         current_solution.remove_vertex(removed_vertex)
         heuristic.recalculate_candidate_list(current_solution, candidate_list, removed_vertex)
         current_solution = heuristic.partial_reconstruction(current_solution, candidate_list)
-        current_solution.reevaluate()
+        current_solution.reevaluate(heuristic.alpha)
         heuristic.insert_candidate(candidate_list, current_solution, removed_vertex)
 
         improved_dispersion = (
@@ -46,7 +48,7 @@ def tabu_search(
         else:
             iterations_without_improvement += 1
 
-    best_solution.reevaluate()
+    best_solution.reevaluate(heuristic.alpha)
     return best_solution, candidate_list
 
 
@@ -57,7 +59,9 @@ def tabu_search_capacity(
     heuristic: ConstructiveHeuristic,
 ) -> Tuple[Solution, List[WeightedCandidate]]:
     best_solution = initial_solution.copy()
+    best_solution.reevaluate(heuristic.alpha)
     current_solution = initial_solution.copy()
+    current_solution.reevaluate(heuristic.alpha)
     iterations_without_improvement = 0
 
     while iterations_without_improvement < max_iterations:
@@ -65,7 +69,7 @@ def tabu_search_capacity(
         current_solution.remove_vertex(removed_vertex)
         heuristic.recalculate_weighted_candidate_list(current_solution, candidate_list, removed_vertex)
         current_solution = heuristic.partial_reconstruction_capacity(current_solution, candidate_list)
-        current_solution.reevaluate()
+        current_solution.reevaluate(heuristic.alpha)
         heuristic.insert_weighted_candidate(candidate_list, current_solution, removed_vertex)
 
         improved_dispersion = (
@@ -86,7 +90,7 @@ def tabu_search_capacity(
         else:
             iterations_without_improvement += 1
 
-    best_solution.reevaluate()
+    best_solution.reevaluate(heuristic.alpha)
     return best_solution, candidate_list
 
 

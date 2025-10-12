@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import math
 import random
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Tuple
 
 from Instance import Instance
 from Solution import Solution
@@ -22,12 +22,15 @@ class ConstructiveHeuristic:
         instance: Instance,
         weight: float,
     ) -> None:
+        if not 0.0 <= alpha <= 1.0:
+            raise ValueError("alpha must belong to [0, 1].")
+        if not 0.0 <= weight <= 1.0:
+            raise ValueError("weight must belong to [0, 1].")
         self.alpha = alpha
         self.beta = beta_construction
         self.beta_local_search = beta_local_search
         self.instance = instance
-        self.configured_weight: Optional[float] = weight if 0.0 <= weight <= 1.0 else None
-        self.weight = self.configured_weight if self.configured_weight is not None else weight
+        self.weight = weight
         self.first_edge_index = 0
         self.max_min_distance = 1.0
         self.max_capacity = max(instance.capacities)
@@ -46,7 +49,7 @@ class ConstructiveHeuristic:
             self.instance.capacities[edge.vertex2],
         )
         self.max_min_distance = edge.distance
-        solution.evaluate_symmetry()
+        solution.reevaluate(self.alpha)
         return solution
 
     def colour_penalty(self, solution: Solution, vertex: int) -> int:
@@ -61,12 +64,6 @@ class ConstructiveHeuristic:
         capacity_component = capacity / self.max_capacity if self.max_capacity else 0.0
         base_score = distance_component * self.weight + capacity_component * (1 - self.weight)
         return base_score * self.alpha - different_colour * (1 - self.alpha)
-
-    def apply_configured_weight(self, lower: float = 0.6, upper: float = 0.9) -> None:
-        if self.configured_weight is not None:
-            self.weight = self.configured_weight
-        else:
-            self.weight = random.uniform(lower, upper)
 
     def build_candidate_list(self, solution: Solution) -> List[Candidate]:
         candidates: List[Candidate] = []
@@ -133,7 +130,7 @@ class ConstructiveHeuristic:
             if candidate.distance < solution.objective_value:
                 solution.update_objective(candidate.vertex, candidate.nearest_vertex, candidate.distance)
             self.update_candidate_list(solution, candidate_list, candidate.vertex)
-        solution.evaluate_symmetry()
+        solution.reevaluate(self.alpha)
         return solution
 
     # ------------------------------------------------------------------
@@ -149,12 +146,11 @@ class ConstructiveHeuristic:
             if candidate.distance < solution.objective_value:
                 solution.update_objective(candidate.vertex, candidate.nearest_vertex, candidate.distance)
             self.update_candidate_list(solution, candidate_list, candidate.vertex)
-        solution.evaluate_symmetry()
+        solution.reevaluate(self.alpha)
         return solution, candidate_list
 
     def construct_biased_capacity_solution(self) -> Tuple[Solution, List[WeightedCandidate]]:
         solution = self.initial_solution()
-        self.apply_configured_weight(0.6, 0.9)
         candidate_list = self.build_weighted_candidate_list(solution)
 
         while not solution.is_feasible():
@@ -165,11 +161,13 @@ class ConstructiveHeuristic:
             if candidate.distance < solution.objective_value:
                 solution.update_objective(candidate.vertex, candidate.nearest_vertex, candidate.distance)
             self.update_weighted_candidate_list(solution, candidate_list, candidate.vertex)
-        solution.evaluate_symmetry()
+        solution.reevaluate(self.alpha)
         return solution, candidate_list
 
     def construct_biased_fixed_weight_solution(self, weight: float) -> Tuple[Solution, List[WeightedCandidate]]:
         solution = self.initial_solution()
+        if not 0.0 <= weight <= 1.0:
+            raise ValueError("weight must belong to [0, 1].")
         self.weight = weight
         candidate_list = self.build_weighted_candidate_list(solution)
 
@@ -181,7 +179,7 @@ class ConstructiveHeuristic:
             if candidate.distance < solution.objective_value:
                 solution.update_objective(candidate.vertex, candidate.nearest_vertex, candidate.distance)
             self.update_weighted_candidate_list(solution, candidate_list, candidate.vertex)
-        solution.evaluate_symmetry()
+        solution.reevaluate(self.alpha)
         return solution, candidate_list
 
     def construct_biased_distribution_solution(
@@ -189,20 +187,10 @@ class ConstructiveHeuristic:
     ) -> Tuple[Solution, List[WeightedCandidate], Tuple[float, float]]:
         solution = self.initial_solution()
 
-        random_value = random.random()
-        cumulative = 0.0
-        selected_interval = next(reversed(distribution))
-        for interval, probability in distribution.items():
-            cumulative += probability
-            if random_value <= cumulative:
-                selected_interval = interval
-                break
-
+        selected_interval = next(iter(distribution)) if distribution else (0.0, 1.0)
         lower, upper = selected_interval
-        if self.configured_weight is not None:
-            self.weight = self.configured_weight
-        else:
-            self.weight = random.uniform(lower, upper if upper <= 1 else 1)
+        if not 0.0 <= self.weight <= 1.0:
+            self.weight = max(min(upper, 1.0), lower)
         candidate_list = self.build_weighted_candidate_list(solution)
 
         while not solution.is_feasible():
@@ -213,7 +201,7 @@ class ConstructiveHeuristic:
             if candidate.distance < solution.objective_value:
                 solution.update_objective(candidate.vertex, candidate.nearest_vertex, candidate.distance)
             self.update_weighted_candidate_list(solution, candidate_list, candidate.vertex)
-        solution.evaluate_symmetry()
+        solution.reevaluate(self.alpha)
         return solution, candidate_list, selected_interval
 
     # ------------------------------------------------------------------
