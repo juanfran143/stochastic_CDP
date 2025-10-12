@@ -49,10 +49,18 @@ class ConstructiveHeuristic:
         solution.evaluate_symmetry()
         return solution
 
-    def weighted_score(self, distance: float, capacity: float) -> float:
+    def colour_penalty(self, solution: Solution, vertex: int) -> int:
+        if not self.instance.colours or not solution.selected_vertices:
+            return 0
+        vertex_colour = self.instance.colours[vertex]
+        selected_colours = {self.instance.colours[selected] for selected in solution.selected_vertices}
+        return 0 if vertex_colour in selected_colours else 1
+
+    def weighted_score(self, distance: float, capacity: float, different_colour: int) -> float:
         distance_component = distance / self.max_min_distance if self.max_min_distance else 0.0
         capacity_component = capacity / self.max_capacity if self.max_capacity else 0.0
-        return distance_component * self.weight + capacity_component * (1 - self.weight)
+        base_score = distance_component * self.weight + capacity_component * (1 - self.weight)
+        return base_score * self.alpha - different_colour * (1 - self.alpha)
 
     def apply_configured_weight(self, lower: float = 0.6, upper: float = 0.9) -> None:
         if self.configured_weight is not None:
@@ -87,7 +95,12 @@ class ConstructiveHeuristic:
         self.max_min_distance = max((candidate.distance for candidate in candidates), default=1.0)
 
         for candidate in candidates:
-            score = self.weighted_score(candidate.distance, self.instance.capacities[candidate.vertex])
+            different_colour = self.colour_penalty(solution, candidate.vertex)
+            score = self.weighted_score(
+                candidate.distance,
+                self.instance.capacities[candidate.vertex],
+                different_colour,
+            )
             weighted_candidates.append(
                 WeightedCandidate(candidate.vertex, candidate.nearest_vertex, candidate.distance, score)
             )
@@ -224,8 +237,11 @@ class ConstructiveHeuristic:
                 candidate.nearest_vertex = last_vertex
         self.max_min_distance = max((candidate.distance for candidate in candidate_list), default=1.0)
         for candidate in candidate_list:
+            different_colour = self.colour_penalty(solution, candidate.vertex)
             candidate.score = self.weighted_score(
-                candidate.distance, self.instance.capacities[candidate.vertex]
+                candidate.distance,
+                self.instance.capacities[candidate.vertex],
+                different_colour,
             )
         candidate_list.sort(key=lambda item: item.score, reverse=True)
 
@@ -240,7 +256,12 @@ class ConstructiveHeuristic:
         nearest_vertex, distance = solution.distance_to(vertex)
         self.max_capacity = max(self.max_capacity, self.instance.capacities[vertex])
         self.max_min_distance = max(self.max_min_distance, distance)
-        score = self.weighted_score(distance, self.instance.capacities[vertex])
+        different_colour = self.colour_penalty(solution, vertex)
+        score = self.weighted_score(
+            distance,
+            self.instance.capacities[vertex],
+            different_colour,
+        )
         candidate_list.append(WeightedCandidate(vertex, nearest_vertex, distance, score))
         candidate_list.sort(key=lambda item: item.score, reverse=True)
 
@@ -266,8 +287,11 @@ class ConstructiveHeuristic:
         self.max_min_distance = max((candidate.distance for candidate in candidate_list), default=1.0)
 
         for candidate in candidate_list:
+            different_colour = self.colour_penalty(solution, candidate.vertex)
             candidate.score = self.weighted_score(
-                candidate.distance, self.instance.capacities[candidate.vertex]
+                candidate.distance,
+                self.instance.capacities[candidate.vertex],
+                different_colour,
             )
         candidate_list.sort(key=lambda item: item.score, reverse=True)
 
