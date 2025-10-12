@@ -8,6 +8,8 @@ import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
 INSTANCES_DIR = (ROOT / "Instances").resolve()
+if str(ROOT) not in sys.path:
+    sys.path.append(str(ROOT))
 sys.path.append(str(ROOT / "CDP"))
 
 from Instance import Instance
@@ -20,7 +22,10 @@ from symmetry_integration import (
     generate_weighted_front,
     pareto_points_to_rows,
     plot_pareto_front,
+    WeightedFrontEntry,
+    _enforce_monotonic_weighted_front,
 )
+from cdp_symmetry import CandidateSolution
 
 try:  # pragma: no cover - optional dependency for plotting
     import matplotlib.pyplot as plt
@@ -192,6 +197,83 @@ class TestSymmetryIntegration(unittest.TestCase):
         self.assertEqual(front[0].alpha_pair, schedule[0])
         produced_pairs = {entry.alpha_pair for entry in front}
         self.assertIn(schedule[-1], produced_pairs)
+
+    def test_monotonic_weighted_front_filters_penalty_increases(self) -> None:
+        entries = [
+            WeightedFrontEntry(
+                alpha_pair=(1.0, 0.0),
+                candidate=CandidateSolution(
+                    selected_nodes=("0",),
+                    capacity=0.0,
+                    dispersion=144.8,
+                    symmetry_penalty=13.84,
+                ),
+            ),
+            WeightedFrontEntry(
+                alpha_pair=(0.85, 0.15),
+                candidate=CandidateSolution(
+                    selected_nodes=("1",),
+                    capacity=0.0,
+                    dispersion=142.9,
+                    symmetry_penalty=13.84,
+                ),
+            ),
+            WeightedFrontEntry(
+                alpha_pair=(0.75, 0.25),
+                candidate=CandidateSolution(
+                    selected_nodes=("0", "1"),
+                    capacity=0.0,
+                    dispersion=140.3,
+                    symmetry_penalty=6.92,
+                ),
+            ),
+            WeightedFrontEntry(
+                alpha_pair=(0.60, 0.40),
+                candidate=CandidateSolution(
+                    selected_nodes=("0", "2"),
+                    capacity=0.0,
+                    dispersion=142.9,
+                    symmetry_penalty=6.92,
+                ),
+            ),
+            WeightedFrontEntry(
+                alpha_pair=(0.00, 1.0),
+                candidate=CandidateSolution(
+                    selected_nodes=("2",),
+                    capacity=0.0,
+                    dispersion=70.4,
+                    symmetry_penalty=6.92,
+                ),
+            ),
+            WeightedFrontEntry(
+                alpha_pair=(0.35, 0.65),
+                candidate=CandidateSolution(
+                    selected_nodes=("0", "3"),
+                    capacity=0.0,
+                    dispersion=55.0,
+                    symmetry_penalty=0.0,
+                ),
+            ),
+            WeightedFrontEntry(
+                alpha_pair=(0.00, 1.0),
+                candidate=CandidateSolution(
+                    selected_nodes=("3",),
+                    capacity=0.0,
+                    dispersion=80.0,
+                    symmetry_penalty=8.0,
+                ),
+            ),
+        ]
+
+        filtered = _enforce_monotonic_weighted_front(entries, tolerance=1e-6)
+
+        self.assertEqual(len(filtered), 3)
+        penalties = [entry.candidate.symmetry_penalty for entry in filtered]
+        self.assertTrue(
+            all(curr <= prev + 1e-6 for prev, curr in zip(penalties, penalties[1:]))
+        )
+        dispersions = [entry.candidate.dispersion for entry in filtered]
+        self.assertListEqual(dispersions, [142.9, 70.4, 55.0])
 
 
 class TestConfigurationLoading(unittest.TestCase):
