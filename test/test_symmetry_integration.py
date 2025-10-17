@@ -78,7 +78,8 @@ class TestSymmetryIntegration(unittest.TestCase):
 
     def test_iterative_front_monotonic_penalty(self) -> None:
         solution = Solution(self.instance)
-        solution.selected_vertices = [0, 1]
+        solution.add_vertex(0)
+        solution.add_vertex(1)
         solution.reevaluate()
         analysis = analyse_solution(self.instance, solution, steps=5)
         penalties = [
@@ -90,7 +91,8 @@ class TestSymmetryIntegration(unittest.TestCase):
 
     def test_analyse_solution_honours_custom_alpha_step(self) -> None:
         solution = Solution(self.instance)
-        solution.selected_vertices = [0, 2]
+        solution.add_vertex(0)
+        solution.add_vertex(2)
         solution.reevaluate()
         custom_step = 0.37
         analysis = analyse_solution(
@@ -154,7 +156,9 @@ class TestSymmetryIntegration(unittest.TestCase):
     @unittest.skipIf(plt is None, "matplotlib not available in test environment")
     def test_plot_pareto_front_creates_image(self) -> None:
         solution = Solution(self.instance)
-        solution.selected_vertices = [0, 1, 2]
+        solution.add_vertex(0)
+        solution.add_vertex(1)
+        solution.add_vertex(2)
         solution.reevaluate()
         analysis = analyse_solution(self.instance, solution, steps=3)
         with tempfile.TemporaryDirectory() as tmp_dir:

@@ -37,6 +37,32 @@ class Solution:
         self.objective_value = baseline
         self.cdp_objective = baseline
 
+    # ------------------------------------------------------------------
+    # Internal helpers
+    # ------------------------------------------------------------------
+    def _reset_objective(self) -> None:
+        baseline = self.instance.sorted_edges[0].distance * 10
+        self.objective_value = baseline
+        self.cdp_objective = baseline
+        self.min_distance_vertex1 = -1
+        self.min_distance_vertex2 = -1
+
+    def _recompute_dispersion(self) -> None:
+        """Recalculate the minimum distance among the selected vertices."""
+
+        self._reset_objective()
+        if len(self.selected_vertices) < 2:
+            return
+        for index, vertex1 in enumerate(self.selected_vertices):
+            for vertex2 in self.selected_vertices[index + 1 :]:
+                distance = self.instance.distances[vertex1][vertex2]
+                if distance < self.cdp_objective:
+                    self.update_objective(vertex1, vertex2, distance)
+
+    # ------------------------------------------------------------------
+    # Public API
+    # ------------------------------------------------------------------
+
     def copy(self) -> "Solution":
         clone = Solution(self.instance)
         clone.selected_vertices = list(self.selected_vertices)
@@ -61,10 +87,14 @@ class Solution:
     def add_vertex(self, vertex: int) -> None:
         self.selected_vertices.append(vertex)
         self.capacity += self.instance.capacities[vertex]
+        self.update_solution(vertex)
 
     def remove_vertex(self, vertex: int) -> None:
+        affects_min_pair = vertex in (self.min_distance_vertex1, self.min_distance_vertex2)
         self.selected_vertices.remove(vertex)
         self.capacity -= self.instance.capacities[vertex]
+        if affects_min_pair:
+            self._recompute_dispersion()
 
     def distance_to(self, vertex: int) -> Tuple[int, float]:
         min_distance = self.instance.sorted_edges[0].distance * 10
@@ -85,6 +115,18 @@ class Solution:
         self.min_distance_vertex1 = vertex1
         self.min_distance_vertex2 = vertex2
 
+    def update_solution(self, vertex: int) -> None:
+        """Update the dispersion objective after adding ``vertex`` to the solution."""
+
+        if len(self.selected_vertices) < 2:
+            return
+        for selected in self.selected_vertices:
+            if selected == vertex:
+                continue
+            distance = self.instance.distances[selected][vertex]
+            if distance < self.cdp_objective:
+                self.update_objective(selected, vertex, distance)
+
     def finalize_objective(self, alpha: float | None = None) -> float:
         """Compute the weighted objective without recomputing dispersion."""
 
@@ -97,16 +139,7 @@ class Solution:
     def evaluate_complete(self, alpha: float | None = None) -> float:
         if alpha is not None:
             self.objective_alpha = alpha
-        self.objective_value = self.instance.sorted_edges[0].distance * 10
-        self.cdp_objective = self.objective_value
-        for vertex1 in self.selected_vertices:
-            for vertex2 in self.selected_vertices:
-                if vertex1 == vertex2:
-                    continue
-                distance = self.instance.distances[vertex1][vertex2]
-                if distance < self.objective_value:
-                    self.objective_value = distance
-                    self.cdp_objective = distance
+        self._recompute_dispersion()
         self.evaluate_symmetry()
         self.objective_value = self.weighted_objective()
         return self.objective_value
@@ -114,18 +147,6 @@ class Solution:
     def reevaluate(self, alpha: float | None = None) -> None:
         if alpha is not None:
             self.objective_alpha = alpha
-        self.objective_value = self.instance.sorted_edges[0].distance * 10
-        self.cdp_objective = self.objective_value
-        for vertex1 in self.selected_vertices:
-            for vertex2 in self.selected_vertices:
-                if vertex1 == vertex2:
-                    continue
-                distance = self.instance.distances[vertex1][vertex2]
-                if distance < self.objective_value:
-                    self.objective_value = distance
-                    self.min_distance_vertex1 = vertex1
-                    self.min_distance_vertex2 = vertex2
-                    self.cdp_objective = distance
         self.evaluate_symmetry()
         self.objective_value = self.weighted_objective()
 
