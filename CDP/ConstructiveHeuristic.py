@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import math
 import random
-from typing import Dict, List, Tuple
+from typing import List, Tuple
 
 from Instance import Instance
 from Solution import Solution
@@ -49,7 +49,6 @@ class ConstructiveHeuristic:
             self.instance.capacities[edge.vertex2],
         )
         self.max_min_distance = edge.distance
-        solution.reevaluate(self.alpha)
         return solution
 
     def select_initial_edge(self) -> Edge:
@@ -149,46 +148,6 @@ class ConstructiveHeuristic:
         position = int(math.log(random.random()) / math.log(1 - beta))
         return position % size if size else 0
 
-    # ------------------------------------------------------------------
-    # Deterministic constructions
-    # ------------------------------------------------------------------
-    def construct_greedy_solution(self) -> Solution:
-        solution = self.initial_solution()
-        candidate_list = self.build_candidate_list(solution)
-        alpha = self.alpha if self.alpha >= 0 else random.random()
-        while not solution.is_feasible():
-            limit = candidate_list[0].distance - (alpha * candidate_list[-1].distance)
-            best_index = max(
-                range(len(candidate_list)),
-                key=lambda index: (
-                    candidate_list[index].distance >= limit,
-                    self.instance.capacities[candidate_list[index].vertex],
-                ),
-            )
-            candidate = candidate_list.pop(best_index)
-            solution.add_vertex(candidate.vertex)
-            if candidate.distance < solution.objective_value:
-                solution.update_objective(candidate.vertex, candidate.nearest_vertex, candidate.distance)
-            self.update_candidate_list(solution, candidate_list, candidate.vertex)
-        solution.reevaluate(self.alpha)
-        return solution
-
-    # ------------------------------------------------------------------
-    # Biased randomized constructions
-    # ------------------------------------------------------------------
-    def construct_biased_solution(self) -> Tuple[Solution, List[Candidate]]:
-        solution = self.initial_solution()
-        candidate_list = self.build_candidate_list(solution)
-        while not solution.is_feasible():
-            position = self.random_index(len(candidate_list), self.beta)
-            candidate = candidate_list.pop(position)
-            solution.add_vertex(candidate.vertex)
-            if candidate.distance < solution.objective_value:
-                solution.update_objective(candidate.vertex, candidate.nearest_vertex, candidate.distance)
-            self.update_candidate_list(solution, candidate_list, candidate.vertex)
-        solution.reevaluate(self.alpha)
-        return solution, candidate_list
-
     def construct_biased_capacity_solution(self) -> Tuple[Solution, List[WeightedCandidate]]:
         solution = self.initial_solution()
         candidate_list = self.build_weighted_candidate_list(solution)
@@ -198,51 +157,12 @@ class ConstructiveHeuristic:
             candidate = candidate_list.pop(position)
             solution.add_vertex(candidate.vertex)
             self.max_capacity = max(self.max_capacity, self.instance.capacities[candidate.vertex])
-            if candidate.distance < solution.objective_value:
+            if candidate.distance < solution.cdp_objective:
                 solution.update_objective(candidate.vertex, candidate.nearest_vertex, candidate.distance)
             self.update_weighted_candidate_list(solution, candidate_list, candidate.vertex)
-        solution.reevaluate(self.alpha)
+        solution.finalize_objective(self.alpha)
         return solution, candidate_list
 
-    def construct_biased_fixed_weight_solution(self, weight: float) -> Tuple[Solution, List[WeightedCandidate]]:
-        solution = self.initial_solution()
-        if not 0.0 <= weight <= 1.0:
-            raise ValueError("weight must belong to [0, 1].")
-        self.weight = weight
-        candidate_list = self.build_weighted_candidate_list(solution)
-
-        while not solution.is_feasible():
-            position = self.random_index(len(candidate_list), self.beta)
-            candidate = candidate_list.pop(position)
-            solution.add_vertex(candidate.vertex)
-            self.max_capacity = max(self.max_capacity, self.instance.capacities[candidate.vertex])
-            if candidate.distance < solution.objective_value:
-                solution.update_objective(candidate.vertex, candidate.nearest_vertex, candidate.distance)
-            self.update_weighted_candidate_list(solution, candidate_list, candidate.vertex)
-        solution.reevaluate(self.alpha)
-        return solution, candidate_list
-
-    def construct_biased_distribution_solution(
-        self, distribution: Dict[Tuple[float, float], float]
-    ) -> Tuple[Solution, List[WeightedCandidate], Tuple[float, float]]:
-        solution = self.initial_solution()
-
-        selected_interval = next(iter(distribution)) if distribution else (0.0, 1.0)
-        lower, upper = selected_interval
-        if not 0.0 <= self.weight <= 1.0:
-            self.weight = max(min(upper, 1.0), lower)
-        candidate_list = self.build_weighted_candidate_list(solution)
-
-        while not solution.is_feasible():
-            position = self.random_index(len(candidate_list), self.beta)
-            candidate = candidate_list.pop(position)
-            solution.add_vertex(candidate.vertex)
-            self.max_capacity = max(self.max_capacity, self.instance.capacities[candidate.vertex])
-            if candidate.distance < solution.objective_value:
-                solution.update_objective(candidate.vertex, candidate.nearest_vertex, candidate.distance)
-            self.update_weighted_candidate_list(solution, candidate_list, candidate.vertex)
-        solution.reevaluate(self.alpha)
-        return solution, candidate_list, selected_interval
 
     # ------------------------------------------------------------------
     # Candidate list maintenance

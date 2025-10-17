@@ -166,9 +166,7 @@ def deterministic_multi_start(
 
     start = time.process_time()
     while time.process_time() - start < test_case.max_time:
-        candidate_solution, candidate_list = heuristic.construct_biased_fixed_weight_solution(
-            heuristic.weight
-        )
+        candidate_solution, candidate_list = heuristic.construct_biased_capacity_solution()
         candidate_solution.reevaluate(alpha)
         candidate_solution, candidate_list = tabu_search_capacity(
             candidate_solution,
