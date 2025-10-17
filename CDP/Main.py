@@ -66,13 +66,6 @@ def _generate_indexed_palette(node_count: int) -> List[str]:
     return colours
 
 
-DEFAULT_LAMBDA_PENALTY = 0.1
-DEFAULT_GAMMA_OVERRIDE: float | None = None
-
-
-DEFAULT_ALPHA_STEP = 0.05
-
-
 def resolve_instance_path(instance_reference: str) -> tuple[str, Path]:
     """Return a display name and absolute path for the requested instance."""
 
@@ -427,6 +420,9 @@ def main() -> None:
             print(f"  Plot was not generated: {plot_error}")
 
 
+DEFAULT_LAMBDA_PENALTY = 0.1
+DEFAULT_GAMMA_OVERRIDE: float | None = None
+DEFAULT_ALPHA_STEP = 0.05
 if __name__ == "__main__":
     main()
     sys.exit(0)
