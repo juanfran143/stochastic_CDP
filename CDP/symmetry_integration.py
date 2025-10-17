@@ -112,8 +112,8 @@ def candidate_to_solution(instance: Instance, candidate: CandidateSolution) -> S
     """Convert a symmetry candidate into the native :class:`Solution` object."""
 
     new_solution = Solution(instance)
-    new_solution.selected_vertices = [int(node_id) for node_id in candidate.selected_nodes]
-    new_solution.capacity = sum(instance.capacities[vertex] for vertex in new_solution.selected_vertices)
+    for node_id in candidate.selected_nodes:
+        new_solution.add_vertex(int(node_id))
     new_solution.reevaluate()
     return new_solution
 
