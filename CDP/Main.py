@@ -301,11 +301,7 @@ def main() -> None:
             steps=6,
             alpha_step=test_case.alpha_step,
         )
-        base_dispersion = (
-            analysis.base_solution.dispersion
-            if math.isfinite(analysis.base_solution.dispersion)
-            else 0.0
-        )
+        base_dispersion = analysis.base_solution.dispersion
         base_penalty = analysis.base_solution.symmetry_penalty
         pareto_plot_path: Path | None = None
         plot_error: str | None = None
@@ -333,9 +329,7 @@ def main() -> None:
                     ),
                 ),
             )
-            best_dispersion = (
-                best_candidate.dispersion if math.isfinite(best_candidate.dispersion) else 0.0
-            )
+            best_dispersion = best_candidate.dispersion
             best_penalty = best_candidate.symmetry_penalty
         else:
             candidate_pool = [analysis.base_solution]
