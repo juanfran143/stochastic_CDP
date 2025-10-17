@@ -294,10 +294,7 @@ def pareto_points_to_rows(candidates: Iterable[CandidateSolution]) -> List[Tuple
 
     rows: List[Tuple[float, float]] = []
     for candidate in candidates:
-        dispersion = (
-            candidate.dispersion if math.isfinite(candidate.dispersion) else 0.0
-        )
-        rows.append((dispersion, candidate.symmetry_penalty))
+        rows.append((candidate.dispersion, candidate.symmetry_penalty))
     return rows
 
 
