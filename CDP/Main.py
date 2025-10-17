@@ -66,47 +66,8 @@ def _generate_indexed_palette(node_count: int) -> List[str]:
     return colours
 
 
-def load_colour_configuration(instance_path: Path, node_count: int) -> List[str]:
-    """Load colour labels from disk or fall back to index-based colours."""
-    a = Path(instance_path)
-    colour_path = a.with_suffix(a.suffix + ".colors")
-    if colour_path.exists():
-        colours = [
-            line.strip()
-            for line in colour_path.read_text(encoding="utf-8").splitlines()
-            if line.strip()
-        ]
-        if len(colours) != node_count:
-            raise ValueError(
-                "Colour configuration must specify exactly one label per vertex."
-            )
-        return colours
-
-    return _generate_indexed_palette(node_count)
-
-
-def load_lambda_parameter(instance_path: Path) -> float:
-    """Return the symmetry lambda penalty, using defaults when unspecified."""
-    a = Path(instance_path)
-    lambda_path = a.with_suffix(a.suffix + ".lambda")
-    if lambda_path.exists():
-        value = float(lambda_path.read_text(encoding="utf-8").strip())
-        if value < 0:
-            raise ValueError("Lambda penalty must be non-negative.")
-        return value
-    return 0.1
-
-
-def load_gamma_override(instance_path: Path) -> float | None:
-    """Load an optional gamma override value for the symmetry penalty."""
-    a = Path(instance_path)
-    gamma_path = a.with_suffix(a.suffix + ".gamma")
-    if gamma_path.exists():
-        value = float(gamma_path.read_text(encoding="utf-8").strip())
-        if value < 0:
-            raise ValueError("Gamma override must be non-negative.")
-        return value
-    return None
+DEFAULT_LAMBDA_PENALTY = 0.1
+DEFAULT_GAMMA_OVERRIDE: float | None = None
 
 
 DEFAULT_ALPHA_STEP = 0.05
@@ -233,10 +194,10 @@ def deterministic_multi_start(
 def execute_test_case(test_case: TestCase, alpha: float) -> Tuple[Solution, List[WeightedCandidate]]:
     instance_path = test_case.instance_path
     instance = Instance(str(instance_path))
-    instance.assign_colours(load_colour_configuration(instance_path, instance.node_count))
+    instance.assign_colours(_generate_indexed_palette(instance.node_count))
     instance.set_symmetry_parameters(
-        lambda_penalty=load_lambda_parameter(instance_path),
-        gamma_override=load_gamma_override(instance_path),
+        lambda_penalty=DEFAULT_LAMBDA_PENALTY,
+        gamma_override=DEFAULT_GAMMA_OVERRIDE,
     )
     heuristic = ConstructiveHeuristic(
         alpha,
