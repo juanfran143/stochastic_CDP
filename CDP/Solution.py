@@ -85,6 +85,15 @@ class Solution:
         self.min_distance_vertex1 = vertex1
         self.min_distance_vertex2 = vertex2
 
+    def finalize_objective(self, alpha: float | None = None) -> float:
+        """Compute the weighted objective without recomputing dispersion."""
+
+        if alpha is not None:
+            self.objective_alpha = alpha
+        self.evaluate_symmetry()
+        self.objective_value = self.weighted_objective()
+        return self.objective_value
+
     def evaluate_complete(self, alpha: float | None = None) -> float:
         if alpha is not None:
             self.objective_alpha = alpha
