@@ -273,11 +273,6 @@ class ConstructiveHeuristic:
             )
         candidate_list.sort(key=lambda item: item.score, reverse=True)
 
-    def insert_candidate(self, candidate_list: List[Candidate], solution: Solution, vertex: int) -> None:
-        nearest_vertex, distance = solution.distance_to(vertex)
-        candidate_list.append(Candidate(vertex, nearest_vertex, distance))
-        candidate_list.sort(key=lambda item: item.distance, reverse=True)
-
     def insert_weighted_candidate(
         self, candidate_list: List[WeightedCandidate], solution: Solution, vertex: int
     ) -> None:
@@ -292,14 +287,6 @@ class ConstructiveHeuristic:
         )
         candidate_list.append(WeightedCandidate(vertex, nearest_vertex, distance, score))
         candidate_list.sort(key=lambda item: item.score, reverse=True)
-
-    def recalculate_candidate_list(
-        self, solution: Solution, candidate_list: List[Candidate], removed_vertex: int
-    ) -> None:
-        for candidate in candidate_list:
-            if candidate.nearest_vertex == removed_vertex:
-                candidate.nearest_vertex, candidate.distance = solution.distance_to(candidate.vertex)
-        candidate_list.sort(key=lambda item: item.distance, reverse=True)
 
     def recalculate_weighted_candidate_list(
         self, solution: Solution, candidate_list: List[WeightedCandidate], removed_vertex: int
@@ -326,14 +313,6 @@ class ConstructiveHeuristic:
     # ------------------------------------------------------------------
     # Partial reconstructions for tabu search
     # ------------------------------------------------------------------
-    def partial_reconstruction(self, solution: Solution, candidate_list: List[Candidate]) -> Solution:
-        while not solution.is_feasible():
-            index = self.random_index(len(candidate_list), self.beta_local_search)
-            candidate = candidate_list.pop(index)
-            solution.add_vertex(candidate.vertex)
-            self.update_candidate_list(solution, candidate_list, candidate.vertex)
-        return solution
-
     def partial_reconstruction_capacity(
         self, solution: Solution, candidate_list: List[WeightedCandidate]
     ) -> Solution:
