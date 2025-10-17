@@ -278,6 +278,31 @@ def perform_sanity_check(results: Iterable[Tuple[TestCase, Solution, List[Weight
         if not solution.is_feasible():
             raise RuntimeError("Generated solution violates the minimum capacity constraint.")
 
+        previous_value = solution.objective_value
+        previous_alpha = solution.objective_alpha
+        recomputed_value = solution.evaluate_complete(previous_alpha)
+
+        if not math.isclose(
+            previous_value,
+            recomputed_value,
+            rel_tol=1e-9,
+            abs_tol=1e-9,
+        ):
+            raise RuntimeError(
+                "Solution objective mismatch after recomputation; the weighted objective "
+                "is not consistent with the stored dispersion and symmetry metrics."
+            )
+
+        if math.isclose(previous_alpha, 1.0, abs_tol=1e-9) and not math.isclose(
+            solution.cdp_objective,
+            recomputed_value,
+            rel_tol=1e-9,
+            abs_tol=1e-9,
+        ):
+            raise RuntimeError(
+                "For α=1 the objective function should coincide with the dispersion value."
+            )
+
 
 def main() -> None:
     tests = load_test_cases("run")
