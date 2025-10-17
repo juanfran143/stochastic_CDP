@@ -339,34 +339,28 @@ def main() -> None:
             ]
         else:
             candidate_pool = [analysis.base_solution, *analysis.epsilon_front]
+        if not candidate_pool:
+            candidate_pool = [analysis.base_solution]
         history_data = compress_pareto_history(solution.pareto_history)
         history_front_size = max(len(history_data) - 1, 0)
         using_history_front = len(candidate_pool) == 1 and history_front_size > 0
-        if candidate_pool:
-            best_candidate = min(
-                candidate_pool,
-                key=lambda candidate: (
-                    candidate.symmetry_penalty,
-                    -(
-                        candidate.dispersion
-                        if math.isfinite(candidate.dispersion)
-                        else 0.0
-                    ),
-                ),
-            )
-            best_dispersion = best_candidate.dispersion
-            best_penalty = best_candidate.symmetry_penalty
-        else:
-            candidate_pool = [analysis.base_solution]
-            best_dispersion = base_dispersion
-            best_penalty = base_penalty
-        if using_history_front:
-            best_history_candidate = min(
-                history_data,
-                key=lambda entry: (entry[2], -entry[1]),
-            )
-            best_dispersion = best_history_candidate[1]
-            best_penalty = best_history_candidate[2]
+
+        def best_key_for_pair(dispersion: float, penalty: float) -> tuple[float, float]:
+            finite_dispersion = dispersion if math.isfinite(dispersion) else 0.0
+            return (penalty, -finite_dispersion)
+
+        candidate_pairs: list[tuple[float, float]] = [(base_dispersion, base_penalty)]
+        candidate_pairs.extend(
+            (candidate.dispersion, candidate.symmetry_penalty)
+            for candidate in candidate_pool
+        )
+        candidate_pairs.extend(
+            (dispersion, penalty) for _, dispersion, penalty in history_data
+        )
+
+        best_dispersion, best_penalty = min(
+            candidate_pairs, key=lambda pair: best_key_for_pair(*pair)
+        )
         try:
             plot_destination = Path("../output") / f"{test_case.instance_name}_pareto.png"
             if using_history_front:
