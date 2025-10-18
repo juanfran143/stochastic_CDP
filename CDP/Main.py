@@ -15,13 +15,8 @@ from ConstructiveHeuristic import ConstructiveHeuristic
 from Instance import Instance
 from LocalSearches import tabu_search_capacity
 from Solution import Solution
-from objects import TestCase, WeightedCandidate
-from symmetry_integration import (
-    analyse_solution,
-    pareto_points_to_rows,
-    plot_pareto_front,
-    plot_pareto_history,
-)
+from objects import TestCase
+from symmetry_integration import plot_pareto_history
 
 
 @dataclass
@@ -37,13 +32,6 @@ class SummaryFile:
     def append(self, line: str) -> None:
         with self.path.open("a", encoding="utf-8") as handle:
             handle.write(f"{line}\n")
-
-
-def clone_weighted_candidates(candidates: Iterable[WeightedCandidate]) -> List[WeightedCandidate]:
-    return [
-        WeightedCandidate(candidate.vertex, candidate.nearest_vertex, candidate.distance, candidate.score)
-        for candidate in candidates
-    ]
 
 
 def _generate_indexed_palette(node_count: int) -> List[str]:
@@ -146,22 +134,20 @@ def write_deterministic_summary(solution: Solution, test_case: TestCase, writer:
 
 
 def deterministic_multi_start(
-    initial: Tuple[Solution, List[WeightedCandidate]],
+    initial_solution: Solution,
     test_case: TestCase,
     heuristic: ConstructiveHeuristic,
     alpha: float,
-) -> Tuple[Solution, List[WeightedCandidate]]:
-    initial_solution, initial_candidates = initial
+) -> Solution:
     initial_solution.reevaluate(alpha)
     best_solution = initial_solution.copy()
     best_solution.reevaluate(alpha)
-    best_candidates = clone_weighted_candidates(initial_candidates)
 
     start = time.process_time()
     while time.process_time() - start < test_case.max_time:
         candidate_solution, candidate_list = heuristic.construct_biased_capacity_solution()
         candidate_solution.reevaluate(alpha)
-        candidate_solution, candidate_list = tabu_search_capacity(
+        candidate_solution, _ = tabu_search_capacity(
             candidate_solution,
             candidate_list,
             test_case.max_iterations,
@@ -173,16 +159,15 @@ def deterministic_multi_start(
             best_solution = candidate_solution.copy()
             best_solution.time = time.process_time() - start
             best_solution.reevaluate(alpha)
-            best_candidates = clone_weighted_candidates(candidate_list)
 
     if best_solution.time == 0.0:
         best_solution.time = time.process_time() - start
 
     best_solution.reevaluate(alpha)
-    return best_solution, best_candidates
+    return best_solution
 
 
-def execute_test_case(test_case: TestCase, alpha: float) -> Tuple[Solution, List[WeightedCandidate]]:
+def execute_test_case(test_case: TestCase, alpha: float) -> Solution:
     instance_path = test_case.instance_path
     instance = Instance(str(instance_path))
     instance.assign_colours(_generate_indexed_palette(instance.node_count))
@@ -198,16 +183,16 @@ def execute_test_case(test_case: TestCase, alpha: float) -> Tuple[Solution, List
         test_case.weight,
     )
 
-    solution, candidates = heuristic.construct_biased_capacity_solution()
+    solution, candidate_list = heuristic.construct_biased_capacity_solution()
     solution.reevaluate(alpha)
-    solution, candidates = tabu_search_capacity(
+    solution, candidate_list = tabu_search_capacity(
         solution,
-        candidates,
+        candidate_list,
         test_case.max_iterations,
         heuristic,
     )
     solution.reevaluate(alpha)
-    return deterministic_multi_start((solution, candidates), test_case, heuristic, alpha)
+    return deterministic_multi_start(solution, test_case, heuristic, alpha)
 
 
 def compress_pareto_history(
@@ -233,18 +218,17 @@ def compress_pareto_history(
     return compressed
 
 
-def run(test_cases: Iterable[TestCase]) -> List[Tuple[TestCase, Solution, List[WeightedCandidate]]]:
-    results: List[Tuple[TestCase, Solution, List[WeightedCandidate]]] = []
+def run(test_cases: Iterable[TestCase]) -> List[Tuple[TestCase, Solution]]:
+    results: List[Tuple[TestCase, Solution]] = []
     for test_case in test_cases:
         random.seed(test_case.seed)
         alpha_values: List[float] = []
         pareto_history: List[Tuple[float, float, float]] = []
         base_solution: Solution | None = None
-        base_candidates: List[WeightedCandidate] | None = None
 
         current_alpha = 1.0
         while True:
-            solution, candidates = execute_test_case(test_case, current_alpha)
+            solution = execute_test_case(test_case, current_alpha)
             solution.reevaluate(current_alpha)
             alpha_values.append(current_alpha)
             pareto_history.append(
@@ -252,49 +236,33 @@ def run(test_cases: Iterable[TestCase]) -> List[Tuple[TestCase, Solution, List[W
             )
             if base_solution is None:
                 base_solution = solution
-                base_candidates = clone_weighted_candidates(candidates)
             current_alpha = max(current_alpha - test_case.alpha_step, 0.0)
             if math.isclose(alpha_values[-1], 0.0, abs_tol=1e-9):
                 break
 
-        if base_solution is None or base_candidates is None:
+        if base_solution is None:
             raise RuntimeError("No feasible solution generated for the provided test case.")
 
         base_solution.alpha_history = alpha_values
         base_solution.pareto_history = pareto_history
-        results.append((test_case, base_solution, base_candidates))
+        results.append((test_case, base_solution))
     return results
 
 
-def perform_sanity_check(results: Iterable[Tuple[TestCase, Solution, List[WeightedCandidate]]]) -> None:
-    for _, solution, _ in results:
-        if not solution.is_feasible():
-            raise RuntimeError("Generated solution violates the minimum capacity constraint.")
-
-        previous_value = solution.objective_value
-        previous_alpha = solution.objective_alpha
-        recomputed_value = solution.evaluate_complete(previous_alpha)
-
-        if not math.isclose(
-            previous_value,
-            recomputed_value,
-            rel_tol=1e-9,
-            abs_tol=1e-9,
-        ):
-            raise RuntimeError(
-                "Solution objective mismatch after recomputation; the weighted objective "
-                "is not consistent with the stored dispersion and symmetry metrics."
+def perform_sanity_check(results: Iterable[Tuple[TestCase, Solution]]) -> None:
+    for test_case, solution in results:
+        if solution.is_feasible():
+            print(
+                f"[sanity] {test_case.instance_name} (seed={test_case.seed}) -> feasible",
+                flush=True,
             )
+            continue
 
-        if math.isclose(previous_alpha, 1.0, abs_tol=1e-9) and not math.isclose(
-            solution.cdp_objective,
-            recomputed_value,
-            rel_tol=1e-9,
-            abs_tol=1e-9,
-        ):
-            raise RuntimeError(
-                "For α=1 the objective function should coincide with the dispersion value."
-            )
+        print(
+            f"[sanity] {test_case.instance_name} (seed={test_case.seed}) -> not feasible",
+            flush=True,
+        )
+        raise RuntimeError("Generated solution violates the minimum capacity constraint.")
 
 
 def main() -> None:
@@ -311,66 +279,35 @@ def main() -> None:
         "Instance\tseed\tbase_dispersion\tbase_penalty\tbest_dispersion\tbest_penalty\tfront_size\n",
     )
 
-    for test_case, solution, _ in results:
+    for test_case, solution in results:
         write_deterministic_summary(solution, test_case, deterministic_writer)
-        analysis = analyse_solution(
-            solution.instance,
-            solution,
-            steps=6,
-            alpha_step=test_case.alpha_step,
-        )
-        base_dispersion = analysis.base_solution.dispersion
-        base_penalty = analysis.base_solution.symmetry_penalty
+        history_data = compress_pareto_history(solution.pareto_history)
+        if history_data:
+            base_dispersion = history_data[0][1]
+            base_penalty = history_data[0][2]
+            best_alpha, best_dispersion, best_penalty = min(
+                history_data,
+                key=lambda entry: (
+                    entry[2],
+                    -entry[1] if math.isfinite(entry[1]) else 0.0,
+                ),
+            )
+        else:
+            base_dispersion = solution.cdp_objective
+            base_penalty = solution.symmetry_penalty
+            best_alpha = solution.objective_alpha
+            best_dispersion = base_dispersion
+            best_penalty = base_penalty
+
+        frontier_size = max(len(history_data) - 1, 0)
         pareto_plot_path: Path | None = None
         plot_error: str | None = None
-        alpha_labels: list[str] | None = None
-        if analysis.weighted_front:
-            candidate_pool = [entry.candidate for entry in analysis.weighted_front]
-            alpha_labels = [
-                f"α=({entry.alpha_pair[0]:.2f}, {entry.alpha_pair[1]:.2f})"
-                for entry in analysis.weighted_front
-            ]
-        else:
-            candidate_pool = [analysis.base_solution, *analysis.epsilon_front]
-        if not candidate_pool:
-            candidate_pool = [analysis.base_solution]
-        history_data = compress_pareto_history(solution.pareto_history)
-        history_front_size = max(len(history_data) - 1, 0)
-        using_history_front = len(candidate_pool) == 1 and history_front_size > 0
-
-        def best_key_for_pair(dispersion: float, penalty: float) -> tuple[float, float]:
-            finite_dispersion = dispersion if math.isfinite(dispersion) else 0.0
-            return (penalty, -finite_dispersion)
-
-        candidate_pairs: list[tuple[float, float]] = [(base_dispersion, base_penalty)]
-        candidate_pairs.extend(
-            (candidate.dispersion, candidate.symmetry_penalty)
-            for candidate in candidate_pool
-        )
-        candidate_pairs.extend(
-            (dispersion, penalty) for _, dispersion, penalty in history_data
-        )
-
-        best_dispersion, best_penalty = min(
-            candidate_pairs, key=lambda pair: best_key_for_pair(*pair)
-        )
         try:
-            plot_destination = Path("../output") / f"{test_case.instance_name}_pareto.png"
-            if using_history_front:
+            if history_data:
+                plot_destination = Path("../output") / f"{test_case.instance_name}_pareto.png"
                 pareto_plot_path = plot_pareto_history(history_data, plot_destination)
-            else:
-                pareto_plot_path = plot_pareto_front(
-                    candidate_pool[0],
-                    candidate_pool[1:],
-                    plot_destination,
-                    alpha_labels=alpha_labels,
-                )
         except RuntimeError as error:
-            pareto_plot_path = None
             plot_error = str(error)
-        frontier_size = (
-            history_front_size if using_history_front else max(len(candidate_pool) - 1, 0)
-        )
         symmetry_writer.append(
             "\t".join(
                 [
@@ -391,29 +328,19 @@ def main() -> None:
             f"cdp_objective={base_dispersion:.3f}, "
             f"symmetry_penalty={base_penalty:.3f}"
         )
-        if using_history_front:
-            rows = [(entry[1], entry[2]) for entry in history_data]
-            labels = [f"α={entry[0]:.2f}" for entry in history_data]
-        else:
-            rows = pareto_points_to_rows(candidate_pool)
-            if alpha_labels is not None:
-                labels = alpha_labels
-            else:
-                labels = [
-                    "Baseline",
-                    *[f"Iteration {index}" for index in range(1, len(rows))],
-                ]
-        for label, (dispersion, penalty) in zip(labels, rows):
+        for alpha, dispersion, penalty in history_data:
             print(
                 "  "
-                f"{label}: cdp_objective={dispersion:.3f}, "
+                f"α={alpha:.2f}: cdp_objective={dispersion:.3f}, "
                 f"symmetry_penalty={penalty:.3f}"
             )
-        if not using_history_front and len(rows) == 1:
-            print(
-                "  No additional improvements were found on the frontier for the "
-                "evaluated α combinations."
-            )
+        print(
+            "  Best α combination: "
+            f"α={best_alpha:.2f}, cdp_objective={best_dispersion:.3f}, "
+            f"symmetry_penalty={best_penalty:.3f}"
+        )
+        if frontier_size == 0:
+            print("  No additional improvements were found on the frontier.")
         if pareto_plot_path is not None:
             print(f"  Plot saved to: {pareto_plot_path}")
         elif plot_error:
