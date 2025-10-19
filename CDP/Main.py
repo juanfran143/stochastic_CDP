@@ -264,7 +264,7 @@ def perform_sanity_check(results: Iterable[Tuple[TestCase, Solution]]) -> None:
         )
         raise RuntimeError("Generated solution violates the minimum capacity constraint.")
 
-
+# Epsilon constraint method
 def main() -> None:
     tests = load_test_cases("run")
     results = run(tests)
