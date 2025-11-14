@@ -8,7 +8,6 @@ from typing import Dict, List, Tuple, TYPE_CHECKING
 if TYPE_CHECKING:  # pragma: no cover - to avoid circular imports at runtime
     from Instance import Instance
 
-#TODO：
 @dataclass
 class Solution:
     """Represents a feasible (or partially feasible) solution for the CDP."""
