@@ -1,4 +1,4 @@
-"""Entry point for executing deterministic critical distance problem experiments."""
+"""Entry point for executing epsilon-constraint critical distance problem experiments."""
 
 from __future__ import annotations
 
@@ -16,7 +16,7 @@ from Instance import Instance
 from LocalSearches import tabu_search_capacity
 from Solution import Solution
 from objects import TestCase
-from symmetry_integration import plot_pareto_history
+from symmetry_integration import plot_epsilon_frontier
 
 
 @dataclass
@@ -98,7 +98,7 @@ def load_test_cases(test_name: str) -> List[TestCase]:
                 beta_ls,
                 max_iterations,
                 weight,
-                *alpha_step,
+                *epsilon_step,
             ) = values
             instance_name, instance_path = resolve_instance_path(instance_reference)
             cases.append(
@@ -111,20 +111,21 @@ def load_test_cases(test_name: str) -> List[TestCase]:
                     beta_local_search=float(beta_ls),
                     max_iterations=int(max_iterations),
                     weight=float(weight),
-                    alpha_step=float(alpha_step[0]) if alpha_step else DEFAULT_ALPHA_STEP,
+                    epsilon_step=int(float(epsilon_step[0])) if epsilon_step else DEFAULT_EPSILON_STEP,
                 )
             )
     return cases
 
 
 def write_deterministic_summary(solution: Solution, test_case: TestCase, writer: SummaryFile) -> None:
+    # solution.objectiveValue contains Maximin Distance
     writer.append(
         "\t".join(
             [
                 test_case.instance_name,
                 f"{test_case.beta_local_search}",
                 f"{test_case.seed}",
-                f"{solution.objective_value}",
+                f"{solution.objectiveValue}",
                 f"{solution.time}",
                 f"{solution.capacity}",
                 f"{test_case.weight}",
@@ -134,49 +135,56 @@ def write_deterministic_summary(solution: Solution, test_case: TestCase, writer:
 
 
 def deterministic_multi_start(
-    initial_solution: Solution,
-    test_case: TestCase,
-    heuristic: ConstructiveHeuristic,
-    alpha: float,
+        initial_solution: Solution,
+        test_case: TestCase,
+        heuristic: ConstructiveHeuristic,
+        epsilon: int,
 ) -> Solution:
-    initial_solution.reevaluate(alpha)
+    initial_solution.reevaluate()
     best_solution = initial_solution.copy()
-    best_solution.reevaluate(alpha)
-
+    best_solution.reevaluate()
     start = time.process_time()
+    iteration_count = 0  # Add an iteration counter
+
     while time.process_time() - start < test_case.max_time:
+        iteration_count += 1
         candidate_solution, candidate_list = heuristic.construct_biased_capacity_solution()
-        candidate_solution.reevaluate(alpha)
+        candidate_solution.reevaluate()  # Removed alpha parameter
         candidate_solution, _ = tabu_search_capacity(
             candidate_solution,
             candidate_list,
             test_case.max_iterations,
             heuristic,
         )
-        candidate_solution.reevaluate(alpha)
+        candidate_solution.reevaluate()  # Removed alpha parameter
 
-        if candidate_solution.objective_value > best_solution.objective_value + 1e-9:
+        # Maximin Distance is the primary objective, maximize it
+        if candidate_solution.objectiveValue > best_solution.objectiveValue + 1e-9:
+            elapsed_time = time.process_time() - start
+            print(
+                f"  [IMPROVEMENT] New Best Found @ {elapsed_time:.2f}s (Iter {iteration_count}) "
+                f"for Epsilon {epsilon}: Dispersion improved from {best_solution.objectiveValue:.3f} to {candidate_solution.objectiveValue:.3f}"
+            )
             best_solution = candidate_solution.copy()
             best_solution.time = time.process_time() - start
-            best_solution.reevaluate(alpha)
+            best_solution.reevaluate()  # Removed alpha parameter
 
     if best_solution.time == 0.0:
         best_solution.time = time.process_time() - start
 
-    best_solution.reevaluate(alpha)
+    best_solution.reevaluate()  # Removed alpha parameter
     return best_solution
 
 
-def execute_test_case(test_case: TestCase, alpha: float) -> Solution:
+def execute_test_case(test_case: TestCase, epsilon: int) -> Solution:
     instance_path = test_case.instance_path
     instance = Instance(str(instance_path))
     instance.assign_colours(_generate_indexed_palette(instance.node_count))
-    instance.set_symmetry_parameters(
-        lambda_penalty=DEFAULT_LAMBDA_PENALTY,
-        gamma_override=DEFAULT_GAMMA_OVERRIDE,
-    )
+
+    # Removed Instance.set_symmetry_parameters call (related to lambda/gamma)
+
     heuristic = ConstructiveHeuristic(
-        alpha,
+        epsilon,  # Pass epsilon
         test_case.beta_construction,
         test_case.beta_local_search,
         instance,
@@ -184,70 +192,129 @@ def execute_test_case(test_case: TestCase, alpha: float) -> Solution:
     )
 
     solution, candidate_list = heuristic.construct_biased_capacity_solution()
-    solution.reevaluate(alpha)
+    solution.reevaluate()
+
+    initial_dispersion = solution.objectiveValue
+
+    # Initial solution
+    print(
+        f"  [LS START] Epsilon {epsilon}: Initial Dispersion={initial_dispersion:.3f}, "
+        f"Count={solution.get_colour_type_count()}"
+    )
+
     solution, candidate_list = tabu_search_capacity(
         solution,
         candidate_list,
         test_case.max_iterations,
         heuristic,
     )
-    solution.reevaluate(alpha)
-    return deterministic_multi_start(solution, test_case, heuristic, alpha)
+    solution.reevaluate()
+
+    final_dispersion = solution.objectiveValue
+
+    # Improvement solution
+    improvement = final_dispersion - initial_dispersion
+    print(
+        f"  [LS END] Epsilon {epsilon}: Final Dispersion={final_dispersion:.3f} (Improvement: {improvement:.3f})"
+    )
+
+    return deterministic_multi_start(solution, test_case, heuristic, epsilon)
 
 
-def compress_pareto_history(
-    history: Iterable[Tuple[float, float, float]],
-    *,
-    tolerance: float = 1e-9,
-) -> List[Tuple[float, float, float]]:
-    """Return the Pareto history without consecutive duplicate entries."""
+# ------------------------------------------------------------------
+# Modified history compression function for Epsilon Method
+# ------------------------------------------------------------------
 
-    compressed: List[Tuple[float, float, float]] = []
-    previous: Tuple[float, float, float] | None = None
-    for alpha, dispersion, penalty in history:
-        if previous is not None:
-            _, prev_dispersion, prev_penalty = previous
-            if math.isclose(dispersion, prev_dispersion, abs_tol=tolerance) and math.isclose(
-                penalty, prev_penalty, abs_tol=tolerance
-            ):
-                previous = (alpha, dispersion, penalty)
-                continue
-        entry = (alpha, dispersion, penalty)
-        compressed.append(entry)
-        previous = entry
+def compress_epsilon_history(
+        # Format: (epsilon_used, dispersion_achieved, colour_count_achieved)
+        history: Iterable[Tuple[int, float, int]],
+        *,
+        tolerance: float = 1e-9,
+) -> List[Tuple[int, float, int]]:
+    """Return the Pareto history by only keeping the maximum dispersion for a given colour count."""
+
+    best_per_count: dict[int, Tuple[int, float]] = {}  # {count: (epsilon, dispersion)}
+
+    for epsilon, dispersion, count in history:
+        # Check if a better dispersion is found for the current count
+        if count not in best_per_count or dispersion > best_per_count[count][1] + tolerance:
+            best_per_count[count] = (epsilon, dispersion)
+        elif math.isclose(dispersion, best_per_count[count][1], abs_tol=tolerance):
+            # If dispersion is equal, keep the solution found with the tighter constraint (smaller epsilon)
+            if epsilon < best_per_count[count][0]:
+                best_per_count[count] = (epsilon, dispersion)
+
+    # Format back to list: (epsilon, dispersion, count) and sort by count
+    compressed: List[Tuple[int, float, int]] = []
+    for count, (epsilon, dispersion) in sorted(best_per_count.items(), key=lambda item: item[0]):
+        compressed.append((epsilon, dispersion, count))
+
     return compressed
 
 
 def run(test_cases: Iterable[TestCase]) -> List[Tuple[TestCase, Solution]]:
     results: List[Tuple[TestCase, Solution]] = []
+
     for test_case in test_cases:
         random.seed(test_case.seed)
-        alpha_values: List[float] = []
-        pareto_history: List[Tuple[float, float, float]] = []
+
+        instance = Instance(str(test_case.instance_path))
+        instance.assign_colours(_generate_indexed_palette(instance.node_count))
+
+        max_epsilon = len(instance.unique_colours)
+        epsilon_step = test_case.epsilon_step
+
+        # === DEBUG CHECK ===
+        print(f"[DEBUG] Instance Node Count: {instance.node_count}")
+        print(f"[DEBUG] Calculated Max Epsilon (len(unique_colours)): {max_epsilon}")
+
+        # Generate the list of epsilon values to execute.
+        # It must include max_epsilon, decrease by step, and include 1.
+        # The sorted(list(set(...))) handles redundancy/order.
+        epsilon_values_to_run = sorted(
+            list(set(range(1, max_epsilon + 1, epsilon_step)) | {1, max_epsilon}),
+            reverse=True
+        )
+
+        # --- DEBUG CHECK 3: Verify Epsilon Sequence ---
+        print(f"[DEBUG] Epsilon sequence to run: {epsilon_values_to_run}")
+
+        pareto_history: List[Tuple[int, float, int]] = []
         base_solution: Solution | None = None
 
-        current_alpha = 1.0
-        while True:
-            solution = execute_test_case(test_case, current_alpha)
-            solution.reevaluate(current_alpha)
-            alpha_values.append(current_alpha)
+        # Iterate directly over the calculated sequence of integers
+        for epsilon_to_execute in epsilon_values_to_run:
+
+            print(
+                f"\n[PROGRESS] Running Test Case: {test_case.instance_name}, Seed: {test_case.seed}, Epsilon: {epsilon_to_execute}",
+                flush=True)
+
+            # Execute experiment with the current epsilon constraint
+            solution = execute_test_case(test_case, epsilon_to_execute)
+            solution.reevaluate()
+
+            # Record historical data
             pareto_history.append(
-                (current_alpha, solution.cdp_objective, solution.symmetry_penalty)
+                (epsilon_to_execute, solution.objectiveValue, solution.get_colour_type_count())
             )
+
             if base_solution is None:
                 base_solution = solution
-            current_alpha = max(current_alpha - test_case.alpha_step, 0.0)
-            if math.isclose(alpha_values[-1], 0.0, abs_tol=1e-9):
-                break
+
+            print(
+                f"[RESULT] Epsilon {epsilon_to_execute} completed: "
+                f"Dispersion={solution.objectiveValue:.3f}, "
+                f"Colour Count={solution.get_colour_type_count()}"
+            )
 
         if base_solution is None:
             raise RuntimeError("No feasible solution generated for the provided test case.")
 
-        base_solution.alpha_history = alpha_values
-        base_solution.pareto_history = pareto_history
+        # Attach history to the result Solution object
+        setattr(base_solution, 'pareto_history', pareto_history)
+
         results.append((test_case, base_solution))
     return results
-
 
 def perform_sanity_check(results: Iterable[Tuple[TestCase, Solution]]) -> None:
     for test_case, solution in results:
@@ -264,6 +331,7 @@ def perform_sanity_check(results: Iterable[Tuple[TestCase, Solution]]) -> None:
         )
         raise RuntimeError("Generated solution violates the minimum capacity constraint.")
 
+
 # Epsilon constraint method
 def main() -> None:
     tests = load_test_cases("run")
@@ -274,82 +342,93 @@ def main() -> None:
         Path("../output") / "deterministic_summary.txt",
         "Instance\tbeta_ls\tseed\tcost\ttime\tcapacity\tweight\n",
     )
-    symmetry_writer = SummaryFile(
-        Path("../output") / "symmetry_summary.txt",
-        "Instance\tseed\tbase_dispersion\tbase_penalty\tbest_dispersion\tbest_penalty\tfront_size\n",
+    # New summary file to reflect epsilon-constraint output
+    epsilon_writer = SummaryFile(
+        Path("../output") / "epsilon_summary.txt",
+        "Instance\tseed\tEpsilon_Used\tDispersion_Achieved\tColour_Count_Achieved\n",
     )
 
     for test_case, solution in results:
         write_deterministic_summary(solution, test_case, deterministic_writer)
-        history_data = compress_pareto_history(solution.pareto_history)
+
+        # Use compressed history data
+        history_data = compress_epsilon_history(getattr(solution, 'pareto_history', []))
+
         if history_data:
-            base_dispersion = history_data[0][1]
-            base_penalty = history_data[0][2]
-            best_alpha, best_dispersion, best_penalty = min(
+            # Initial solution (usually the least constrained point, the first in history_data)
+            initial_epsilon, initial_dispersion, initial_count = history_data[0]
+
+            # Find the solution with the maximum Maximin Distance
+            best_solution_data = max(
                 history_data,
-                key=lambda entry: (
-                    entry[2],
-                    -entry[1] if math.isfinite(entry[1]) else 0.0,
-                ),
+                key=lambda entry: entry[1],  # Maximize dispersion (objectiveValue)
             )
+            best_epsilon, best_dispersion, best_count = best_solution_data
+
+            frontier_size = len(history_data)
         else:
-            base_dispersion = solution.cdp_objective
-            base_penalty = solution.symmetry_penalty
-            best_alpha = solution.objective_alpha
-            best_dispersion = base_dispersion
-            best_penalty = base_penalty
+            initial_epsilon, initial_dispersion, initial_count = (
+            0, solution.objectiveValue, solution.get_colour_type_count())
+            best_epsilon, best_dispersion, best_count = initial_epsilon, initial_dispersion, initial_count
+            frontier_size = 0
 
-        frontier_size = max(len(history_data) - 1, 0)
-        pareto_plot_path: Path | None = None
-        plot_error: str | None = None
-        try:
-            if history_data:
-                plot_destination = Path("../output") / f"{test_case.instance_name}_pareto.png"
-                pareto_plot_path = plot_pareto_history(history_data, plot_destination)
-        except RuntimeError as error:
-            plot_error = str(error)
-        symmetry_writer.append(
-            "\t".join(
-                [
-                    test_case.instance_name,
-                    f"{test_case.seed}",
-                    f"{base_dispersion}",
-                    f"{base_penalty}",
-                    f"{best_dispersion}",
-                    f"{best_penalty}",
-                    f"{frontier_size}",
-                ]
+        # Output all points on the Pareto frontier to the file
+        for epsilon, dispersion, count in history_data:
+            epsilon_writer.append(
+                "\t".join(
+                    [
+                        test_case.instance_name,
+                        f"{test_case.seed}",
+                        f"{epsilon}",
+                        f"{dispersion}",
+                        f"{count}",
+                    ]
+                )
             )
+
+        print(f"Epsilon frontier for {test_case.instance_name} (seed={test_case.seed}):")
+
+        print(
+            "  Constraint-agnostic reference: "
+            f"Epsilon_used={initial_epsilon}, "
+            f"Dispersion={initial_dispersion:.3f}, "
+            f"Colour_Count={initial_count}"
         )
 
-        print(f"Pareto frontier for {test_case.instance_name} (seed={test_case.seed}):")
-        print(
-            "  Symmetry-agnostic heuristic reference: "
-            f"cdp_objective={base_dispersion:.3f}, "
-            f"symmetry_penalty={base_penalty:.3f}"
-        )
-        for alpha, dispersion, penalty in history_data:
+        # Print all points on the Pareto frontier
+        for epsilon, dispersion, count in history_data:
             print(
                 "  "
-                f"α={alpha:.2f}: cdp_objective={dispersion:.3f}, "
-                f"symmetry_penalty={penalty:.3f}"
+                f"Epsilon={epsilon}: Dispersion={dispersion:.3f}, "
+                f"Colour_Count={count}"
             )
+
+        # Print the best solution found
         print(
-            "  Best α combination: "
-            f"α={best_alpha:.2f}, cdp_objective={best_dispersion:.3f}, "
-            f"symmetry_penalty={best_penalty:.3f}"
+            "  Best Dispersion (Across all Epsilon): "
+            f"Epsilon_used={best_epsilon}, Dispersion={best_dispersion:.3f}, "
+            f"Colour_Count={best_count}"
         )
-        if frontier_size == 0:
-            print("  No additional improvements were found on the frontier.")
+
+        # Plotting logic
+        plot_error: str | None = None
+        pareto_plot_path: Path | None = None
+        try:
+            if history_data:
+                plot_destination = Path("../output") / f"{test_case.instance_name}_epsilon_frontier.png"
+                # Call the new plotting function
+                pareto_plot_path = plot_epsilon_frontier(history_data, plot_destination)
+        except RuntimeError as error:
+            plot_error = str(error)
+
         if pareto_plot_path is not None:
             print(f"  Plot saved to: {pareto_plot_path}")
         elif plot_error:
             print(f"  Plot was not generated: {plot_error}")
 
 
-DEFAULT_LAMBDA_PENALTY = 0.1
-DEFAULT_GAMMA_OVERRIDE: float | None = None
-DEFAULT_ALPHA_STEP = 0.05
+
+DEFAULT_EPSILON_STEP = 1
 if __name__ == "__main__":
     main()
     sys.exit(0)

@@ -1,55 +1,39 @@
-"""Tabu-inspired local search with capacity-aware candidates."""
+"""Local search procedures (tabu-inspired) for solution refinement."""
 
 from __future__ import annotations
 
-import math
 from typing import List, Tuple
 
 from ConstructiveHeuristic import ConstructiveHeuristic
 from Solution import Solution
-from objects import WeightedCandidate
-
+from objects import Candidate, WeightedCandidate
 
 def tabu_search_capacity(
     initial_solution: Solution,
-    candidate_list: List[WeightedCandidate],
-    max_iterations: int,
+    candidateList: List[WeightedCandidate],
+    maxIterations: int,
     heuristic: ConstructiveHeuristic,
 ) -> Tuple[Solution, List[WeightedCandidate]]:
-    best_solution = initial_solution.copy()
-    best_solution.reevaluate(heuristic.alpha)
-    current_solution = initial_solution.copy()
-    current_solution.reevaluate(heuristic.alpha)
-    iterations_without_improvement = 0
+    bestSolution = initial_solution.copy()
+    currentSolution = initial_solution.copy()
+    iterationsWithoutImprovement = 0
 
-    while iterations_without_improvement < max_iterations:
-        removed_vertex = current_solution.selected_vertices[0]
-        current_solution.remove_vertex(removed_vertex)
-        heuristic.recalculate_weighted_candidate_list(current_solution, candidate_list, removed_vertex)
-        current_solution = heuristic.partial_reconstruction_capacity(current_solution, candidate_list)
-        current_solution.reevaluate(heuristic.alpha)
-        heuristic.insert_weighted_candidate(candidate_list, current_solution, removed_vertex)
+    while iterationsWithoutImprovement < maxIterations:
+        removedVertex = currentSolution.selectedVertices[0]
+        currentSolution.remove_vertex(removedVertex)
 
-        improved_dispersion = (
-            current_solution.objective_value > best_solution.objective_value + 1e-9
-        )
-        same_dispersion = math.isclose(
-            current_solution.objective_value,
-            best_solution.objective_value,
-            rel_tol=1e-9,
-            abs_tol=1e-9,
-        )
-        better_symmetry = (
-            current_solution.symmetry_penalty < best_solution.symmetry_penalty - 1e-9
-        )
-        if improved_dispersion or (same_dispersion and better_symmetry):
-            best_solution = current_solution.copy()
-            iterations_without_improvement = 0
+        heuristic.recalculate_weighted_candidate_list(currentSolution, candidateList, removedVertex)
+        currentSolution = heuristic.partial_reconstruction_capacity(currentSolution, candidateList)
+        currentSolution.reevaluate()
+        heuristic.insert_weighted_candidate(candidateList, currentSolution, removedVertex)
+
+        if currentSolution.objectiveValue > bestSolution.objectiveValue:
+            bestSolution = currentSolution.copy()
+            iterationsWithoutImprovement = 0
         else:
-            iterations_without_improvement += 1
+            iterationsWithoutImprovement += 1
 
-    best_solution.reevaluate(heuristic.alpha)
-    return best_solution, candidate_list
+    return bestSolution, candidateList
 
 
 

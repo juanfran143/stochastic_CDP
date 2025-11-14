@@ -16,17 +16,21 @@ class ConstructiveHeuristic:
 
     def __init__(
         self,
-        alpha: float,
+        # alpha: float,
+        epsilon: int,
         beta_construction: float,
         beta_local_search: float,
         instance: Instance,
         weight: float,
     ) -> None:
-        if not 0.0 <= alpha <= 1.0:
-            raise ValueError("alpha must belong to [0, 1].")
+        # if not 0.0 <= alpha <= 1.0:
+        #     raise ValueError("alpha must belong to [0, 1].")
+        if not 1 <= epsilon <= 4:
+            raise ValueError("Epsilon must belong to [1,4]")
         if not 0.0 <= weight <= 1.0:
             raise ValueError("weight must belong to [0, 1].")
-        self.alpha = alpha
+        # self.alpha = alpha
+        self.epsilon = epsilon
         self.beta = beta_construction
         self.beta_local_search = beta_local_search
         self.instance = instance
@@ -52,7 +56,7 @@ class ConstructiveHeuristic:
         return solution
 
     def select_initial_edge(self) -> Edge:
-        """Choose the starting edge according to the current ``alpha`` value."""
+        """Choose the starting edge according to the current value and the constraint of Epsilon"""
 
         if not self.instance.sorted_edges:
             raise ValueError("Instance does not define any edges.")
@@ -66,48 +70,74 @@ class ConstructiveHeuristic:
         best_tiebreaker = -math.inf
         best_index = self.first_edge_index
 
-        for index, edge in enumerate(self.instance.sorted_edges):
-            same_colour = (
-                self.instance.colours[edge.vertex1]
-                == self.instance.colours[edge.vertex2]
-            )
-            colour_score = 1.0 if same_colour else 0.0
+
+        # --- 1. Filter Edges based on Epsilon Constraint ---
+
+        # In the epsilon-constraint method, the f2 constraint must be satisfied.
+        # Since the initial solution S has two vertices, f2(S) is either 1 (same colour) or 2 (different colours).
+        indexed_candidate_edges: List[Tuple[int, Edge]] = []
+
+        if self.epsilon == 1:
+            # If epsilon = 1, the two vertices must have the same colour (f2(S) <= 1).
+            for index, edge in enumerate(self.instance.sorted_edges):
+                if self.instance.colours[edge.vertex1] == self.instance.colours[edge.vertex2]:
+                    indexed_candidate_edges.append((index, edge))
+
+            if not indexed_candidate_edges:
+                raise ValueError(
+                    f"Cannot find any same-colour edge to start construction. "
+                    f"Constraint epsilon={self.epsilon} requires f2(S) <= 1, "
+                    f"but no pair of vertices share the same colour."
+                )
+
+        elif self.epsilon >= 2:
+            # If epsilon_k >= 2, any pair of vertices satisfies the colour constraint (f2(S) <= 2).
+            indexed_candidate_edges = list(enumerate(self.instance.sorted_edges))
+
+        else:
+            # Should not happen in this problem context (f2 >= 1)
+            raise ValueError(f"Invalid epsilon value: {self.epsilon}")
+
+        # --- 2. Build Restricted Candidate List (RCL) based on f1 Score (Distance) ---
+        best_original_index = indexed_candidate_edges[0][0] if indexed_candidate_edges else self.first_edge_index
+
+        for original_index, edge in indexed_candidate_edges:
             distance_score = edge.distance / max_distance if max_distance else 0.0
-            colour_weight = 1.0 - self.alpha
-            distance_weight = self.alpha
-            combined_score = colour_weight * colour_score + distance_weight * distance_score
+            combined_score = distance_score  # combined_score is distance_score
 
             if (
-                combined_score > best_score
-                or (
+                    combined_score > best_score
+                    or (
                     math.isclose(combined_score, best_score)
-                    and distance_score > best_tiebreaker
-                )
+                    and distance_score > best_tiebreaker)
             ):
                 best_score = combined_score
                 best_tiebreaker = distance_score
-                best_index = index
+                best_original_index = original_index
 
-        self.first_edge_index = best_index
-        return self.instance.sorted_edges[best_index]
+        self.first_edge_index = best_original_index
+        return self.instance.sorted_edges[self.first_edge_index]
 
-    def colour_penalty(self, solution: Solution, vertex: int) -> int:
-        if not self.instance.colours or not solution.selected_vertices:
-            return 0
-        vertex_colour = self.instance.colours[vertex]
-        selected_colours = {self.instance.colours[selected] for selected in solution.selected_vertices}
-        return 0 if vertex_colour in selected_colours else 1
 
-    def weighted_score(self, distance: float, capacity: float, different_colour: int) -> float:
+    # def colour_penalty(self, solution: Solution, vertex: int) -> int:
+    #     if not self.instance.colours or not solution.selectedVertices:
+    #         return 0
+    #     vertex_colour = self.instance.colours[vertex]
+    #     selected_colours = {self.instance.colours[selected] for selected in solution.selectedVertices}
+    #     return 0 if vertex_colour in selected_colours else 1
+
+
+    # remove alpha
+    def weighted_score(self, distance: float, capacity: float) -> float:
         distance_component = distance / self.max_min_distance if self.max_min_distance else 0.0
         capacity_component = capacity / self.max_capacity if self.max_capacity else 0.0
         base_score = distance_component * self.weight + capacity_component * (1 - self.weight)
-        return base_score * self.alpha - different_colour * (1 - self.alpha)
+        return base_score
 
     def build_candidate_list(self, solution: Solution) -> List[Candidate]:
         candidates: List[Candidate] = []
         for vertex in range(self.instance.node_count):
-            if vertex in solution.selected_vertices:
+            if vertex in solution.selectedVertices:
                 continue
             nearest_vertex, distance = solution.distance_to(vertex)
             candidates.append(Candidate(vertex, nearest_vertex, distance))
@@ -116,14 +146,14 @@ class ConstructiveHeuristic:
 
     def build_weighted_candidate_list(self, solution: Solution) -> List[WeightedCandidate]:
         weighted_candidates: List[WeightedCandidate] = []
-        selected_capacities = [self.instance.capacities[v] for v in solution.selected_vertices]
+        selected_capacities = [self.instance.capacities[v] for v in solution.selectedVertices]
         self.max_capacity = (
             max(selected_capacities) if selected_capacities else max(self.instance.capacities)
         )
 
         candidates: List[Candidate] = []
         for vertex in range(self.instance.node_count):
-            if vertex in solution.selected_vertices:
+            if vertex in solution.selectedVertices:
                 continue
             nearest_vertex, distance = solution.distance_to(vertex)
             candidates.append(Candidate(vertex, nearest_vertex, distance))
@@ -131,11 +161,11 @@ class ConstructiveHeuristic:
         self.max_min_distance = max((candidate.distance for candidate in candidates), default=1.0)
 
         for candidate in candidates:
-            different_colour = self.colour_penalty(solution, candidate.vertex)
+            # different_colour = self.colour_penalty(solution, candidate.vertex)
             score = self.weighted_score(
                 candidate.distance,
                 self.instance.capacities[candidate.vertex],
-                different_colour,
+                # different_colour,
             )
             weighted_candidates.append(
                 WeightedCandidate(candidate.vertex, candidate.nearest_vertex, candidate.distance, score)
@@ -155,13 +185,29 @@ class ConstructiveHeuristic:
         while not solution.is_feasible():
             position = self.random_index(len(candidate_list), self.beta)
             candidate = candidate_list.pop(position)
-            solution.add_vertex(candidate.vertex)
+            vertex_to_add = candidate.vertex
+
+            # New: Epsilon constraint check
+            current_count = solution.get_colour_type_count()
+            vertex_colour = self.instance.colours[vertex_to_add]
+            colour_exists = vertex_colour in solution.colourCounts
+
+            if not colour_exists:
+                new_colour_count = current_count + 1
+            else:
+                new_colour_count = current_count
+                
+            if new_colour_count > self.epsilon:
+                continue
+
+
+            solution.add_vertex(vertex_to_add)
             self.max_capacity = max(self.max_capacity, self.instance.capacities[candidate.vertex])
-            if candidate.distance < solution.cdp_objective:
+            if candidate.distance < solution.objectiveValue:
                 solution.update_objective(candidate.vertex, candidate.nearest_vertex, candidate.distance)
             self.update_weighted_candidate_list(solution, candidate_list, candidate.vertex)
-        solution.finalize_objective(self.alpha)
         return solution, candidate_list
+
 
 
     # ------------------------------------------------------------------
@@ -185,11 +231,9 @@ class ConstructiveHeuristic:
                 candidate.nearest_vertex = last_vertex
         self.max_min_distance = max((candidate.distance for candidate in candidate_list), default=1.0)
         for candidate in candidate_list:
-            different_colour = self.colour_penalty(solution, candidate.vertex)
             candidate.score = self.weighted_score(
                 candidate.distance,
-                self.instance.capacities[candidate.vertex],
-                different_colour,
+                self.instance.capacities[candidate.vertex]
             )
         candidate_list.sort(key=lambda item: item.score, reverse=True)
 
@@ -199,11 +243,11 @@ class ConstructiveHeuristic:
         nearest_vertex, distance = solution.distance_to(vertex)
         self.max_capacity = max(self.max_capacity, self.instance.capacities[vertex])
         self.max_min_distance = max(self.max_min_distance, distance)
-        different_colour = self.colour_penalty(solution, vertex)
+        # different_colour = self.colour_penalty(solution, vertex)
         score = self.weighted_score(
             distance,
             self.instance.capacities[vertex],
-            different_colour,
+            # different_colour,
         )
         candidate_list.append(WeightedCandidate(vertex, nearest_vertex, distance, score))
         candidate_list.sort(key=lambda item: item.score, reverse=True)
@@ -215,18 +259,18 @@ class ConstructiveHeuristic:
             if candidate.nearest_vertex == removed_vertex:
                 candidate.nearest_vertex, candidate.distance = solution.distance_to(candidate.vertex)
 
-        selected_capacities = [self.instance.capacities[v] for v in solution.selected_vertices]
+        selected_capacities = [self.instance.capacities[v] for v in solution.selectedVertices]
         self.max_capacity = (
             max(selected_capacities) if selected_capacities else max(self.instance.capacities)
         )
         self.max_min_distance = max((candidate.distance for candidate in candidate_list), default=1.0)
 
         for candidate in candidate_list:
-            different_colour = self.colour_penalty(solution, candidate.vertex)
+            # different_colour = self.colour_penalty(solution, candidate.vertex)
             candidate.score = self.weighted_score(
                 candidate.distance,
                 self.instance.capacities[candidate.vertex],
-                different_colour,
+                # different_colour,
             )
         candidate_list.sort(key=lambda item: item.score, reverse=True)
 
@@ -239,7 +283,22 @@ class ConstructiveHeuristic:
         while not solution.is_feasible():
             index = self.random_index(len(candidate_list), self.beta_local_search)
             candidate = candidate_list.pop(index)
-            solution.add_vertex(candidate.vertex)
+            vertex_to_add = candidate.vertex
+            
+            # Epsilon Constraint Check
+            current_count = solution.get_colour_type_count()
+            vertex_colour = self.instance.colours[vertex_to_add]
+            colour_exists = vertex_colour in solution.colourCounts
+
+            if not colour_exists:
+                new_colour_count = current_count + 1
+            else:
+                new_colour_count = current_count
+
+            if new_colour_count > self.epsilon:
+                continue
+
+            solution.add_vertex(vertex_to_add)
             self.max_capacity = max(self.max_capacity, self.instance.capacities[candidate.vertex])
             self.update_weighted_candidate_list(solution, candidate_list, candidate.vertex)
         return solution
