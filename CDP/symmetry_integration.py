@@ -77,9 +77,9 @@ def plot_epsilon_frontier(
             zorder=5,
         )
 
-    plt.xlabel("Colour Count ($f_2$)")
-    plt.ylabel("CDP objective (Dispersion, $f_1$)")
-    plt.title(r"CDP Epsilon-Constraint Frontier (Maximize $f_1$ s.t. $f_2 \le \epsilon$)")
+    plt.xlabel("Colour Count (f2)")
+    plt.ylabel("CDP objective (Dispersion, f1)")
+    plt.title("CDP Epsilon-Constraint Frontier (Maximize f1 subject to f2 ≤ ε)")
     plt.grid(True, linestyle="--", alpha=0.4)
 
     handles, labels_legend = plt.gca().get_legend_handles_labels()

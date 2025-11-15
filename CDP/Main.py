@@ -257,8 +257,7 @@ def enforce_monotonic_objective(
     best_dispersion = -math.inf
     adjusted: List[Tuple[int, float, int]] = []
     for epsilon, dispersion, colour_count in sorted(history, key=lambda entry: entry[0]):
-        if dispersion > best_dispersion:
-            best_dispersion = dispersion
+        best_dispersion = max(best_dispersion, dispersion)
         adjusted.append((epsilon, best_dispersion, colour_count))
     return adjusted
 
