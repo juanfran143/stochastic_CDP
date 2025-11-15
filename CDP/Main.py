@@ -10,7 +10,7 @@ import sys
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Iterable, List, Sequence, Tuple
+from typing import Any, Iterable, List, Tuple
 
 from ConstructiveHeuristic import ConstructiveHeuristic
 from Instance import Instance
@@ -65,26 +65,12 @@ def resolve_instance_path(instance_reference: str) -> tuple[str, Path]:
 
     reference_path = Path(instance_reference)
     if reference_path.is_absolute():
-        if not reference_path.exists():
-            raise FileNotFoundError(
-                f"Requested instance '{reference_path}' was not found."
-            )
         return reference_path.name, reference_path
 
-    search_roots = [
-        REPO_ROOT / "Instances",
-        REPO_ROOT,
-        REPO_ROOT.parent,
-    ]
-    for root in search_roots:
-        candidate = (root / reference_path).resolve()
-        if candidate.exists():
-            return reference_path.name, candidate
-
-    raise FileNotFoundError(
-        "Requested instance was not found. "
-        f"Searched in: {', '.join(str((root / reference_path).resolve()) for root in search_roots)}."
-    )
+    candidate = (REPO_ROOT / reference_path).resolve()
+    if not candidate.exists():
+        candidate = (REPO_ROOT / "Instances" / reference_path).resolve()
+    return reference_path.name, candidate
 
 
 def _coerce_bool(value: Any) -> bool:
@@ -104,49 +90,26 @@ def load_test_cases(test_name: str) -> List[TestCase]:
         payload = json.load(handle)
 
     if isinstance(payload, dict):
-        case_entries = payload.get("cases") or payload.get("tests")
+        case_entries = payload.get("cases") or payload.get("tests") or []
     else:
         case_entries = payload
 
-    if not isinstance(case_entries, Sequence):
-        raise ValueError(
-            f"Expected a list of test cases in {file_path}, received {type(payload).__name__}."
-        )
-
     cases: List[TestCase] = []
     for entry in case_entries:
-        if not isinstance(entry, dict):
-            raise ValueError(f"Each test case must be an object. Invalid entry: {entry!r}")
-
-        try:
-            instance_reference = entry["instance"]
-            seed = int(entry["seed"])
-            max_time = int(entry["max_time"])
-            beta_c = float(entry["beta_construction"])
-            beta_ls = float(entry["beta_local_search"])
-            max_iterations = int(entry["max_iterations"])
-            weight = float(entry["weight"])
-        except KeyError as exc:  # pragma: no cover - configuration errors
-            raise ValueError(
-                f"Missing required field '{exc.args[0]}' in {file_path}."
-            ) from exc
-
+        instance_reference = entry["instance"]
         instance_name, instance_path = resolve_instance_path(instance_reference)
-        max_epsilon = int(entry.get("max_epsilon", 0) or 0)
-        plot_flag = entry.get("plot", False)
-
         cases.append(
             TestCase(
                 instance_name=instance_name,
                 instance_path=instance_path,
-                seed=seed,
-                max_time=max_time,
-                beta_construction=beta_c,
-                beta_local_search=beta_ls,
-                max_iterations=max_iterations,
-                weight=weight,
-                max_epsilon=max(0, max_epsilon),
-                plot_frontier=_coerce_bool(plot_flag),
+                seed=int(entry["seed"]),
+                max_time=int(entry["max_time"]),
+                beta_construction=float(entry["beta_construction"]),
+                beta_local_search=float(entry["beta_local_search"]),
+                max_iterations=int(entry["max_iterations"]),
+                weight=float(entry["weight"]),
+                max_epsilon=max(0, int(entry.get("max_epsilon", 0) or 0)),
+                plot_frontier=_coerce_bool(entry.get("plot", False)),
             )
         )
     return cases
