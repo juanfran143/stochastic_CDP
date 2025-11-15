@@ -1,0 +1,13 @@
+[
+  {
+    "instance": "GKD-b_11_n50_b02_m5.txt",
+    "seed": 0,
+    "max_time": 5,
+    "beta_construction": 0.5,
+    "beta_local_search": 0.5,
+    "max_iterations": 200,
+    "weight": 0.7,
+    "max_epsilon": 4,
+    "plot": true
+  }
+]

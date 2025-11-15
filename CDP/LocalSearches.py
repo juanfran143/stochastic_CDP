@@ -24,7 +24,6 @@ def tabu_search_capacity(
 
         heuristic.recalculate_weighted_candidate_list(currentSolution, candidateList, removedVertex)
         currentSolution = heuristic.partial_reconstruction_capacity(currentSolution, candidateList)
-        currentSolution.reevaluate()
         heuristic.insert_weighted_candidate(candidateList, currentSolution, removedVertex)
 
         if currentSolution.objectiveValue > bestSolution.objectiveValue:
