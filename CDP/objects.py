@@ -42,5 +42,6 @@ class TestCase:
     beta_local_search: float
     max_iterations: int
     weight: float
-    epsilon_step: int = 1
+    max_epsilon: int = 0
+    plot_frontier: bool = False
 

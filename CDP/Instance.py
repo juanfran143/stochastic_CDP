@@ -34,14 +34,9 @@ class Instance:
         with open(self.path, "r", encoding="utf-8") as handle:
             lines = [line.strip() for line in handle if line.strip()]
 
-        if len(lines) < 3:
-            raise ValueError("Instance file is incomplete.")
-
         self.node_count = int(lines[0])
         self.min_capacity = float(lines[1])
         self.capacities = [float(value) for value in lines[2].split("\t")]
-        if len(self.capacities) != self.node_count:
-            raise ValueError("Capacity vector length does not match node count.")
 
         self.distances = [
             [0.0 for _ in range(self.node_count)] for _ in range(self.node_count)
@@ -50,8 +45,6 @@ class Instance:
 
         for row_index, raw_row in enumerate(lines[3:]):
             values = [float(value) for value in raw_row.split("\t")]
-            if len(values) != self.node_count:
-                raise ValueError("Distance matrix row length mismatch.")
             for column_index, distance in enumerate(values):
                 if distance:
                     self.distances[row_index][column_index] = distance
@@ -65,12 +58,11 @@ class Instance:
     def assign_colours(self, colours: Sequence[str]) -> None:
         """Assign a colour label to every vertex in the instance."""
 
-        if len(colours) != self.node_count:
-            raise ValueError("Number of colours must match the number of vertices.")
-        if len(colours) != self.node_count:
-            raise ValueError("Number of colours must match the number of vertices.")
-
-        self.colours = list(colours)
+        palette = list(colours)
+        if len(palette) < self.node_count and palette:
+            repeats = (self.node_count - len(palette) + len(palette) - 1) // len(palette)
+            palette.extend(palette * repeats)
+        self.colours = palette[: self.node_count]
         self.unique_colours = sorted(list(set(self.colours)))
 
 

@@ -26,7 +26,7 @@ class Solution:
     meanStochasticObjective: Dict[int, float] = field(default_factory=lambda: {1: 0.0, 2: 0.0})
 
     def __post_init__(self) -> None:
-        self.objectiveValue = self.instance.sorted_edges[0].distance * 10
+        self.objectiveValue = self._objective_upper_bound()
 
     def copy(self) -> "Solution":
         clone = Solution(self.instance)
@@ -64,8 +64,10 @@ class Solution:
             if self.colourCounts[colour] == 0:
                 del self.colourCounts[colour]
 
+        self._recompute_objective()
+
     def distance_to(self, vertex: int) -> Tuple[int, float]:
-        minDistance = self.instance.sorted_edges[0].distance * 10
+        minDistance = self._objective_upper_bound()
         minVertex = -1
         for selected in self.selectedVertices:
             candidateDistance = self.instance.distances[selected][vertex]
@@ -83,29 +85,30 @@ class Solution:
         self.minDistanceVertex2 = vertex2
 
     def evaluate_complete(self) -> float:
-        self.objectiveValue = self.instance.sorted_edges[0].distance * 10
-        for vertex1 in self.selectedVertices:
-            for vertex2 in self.selectedVertices:
-                if vertex1 == vertex2:
-                    continue
-                distance = self.instance.distances[vertex1][vertex2]
-                if distance < self.objectiveValue:
-                    self.objectiveValue = distance
+        self._recompute_objective()
         return self.objectiveValue
-
-    def reevaluate(self) -> None:
-        self.objectiveValue = self.instance.sorted_edges[0].distance * 10
-        for vertex1 in self.selectedVertices:
-            for vertex2 in self.selectedVertices:
-                if vertex1 == vertex2:
-                    continue
-                distance = self.instance.distances[vertex1][vertex2]
-                if distance < self.objectiveValue:
-                    self.objectiveValue = distance
-                    self.minDistanceVertex1 = vertex1
-                    self.minDistanceVertex2 = vertex2
 
 
     def get_colour_type_count(self) -> int:
         # Return the number of distinct colours in the solution
         return len(self.colourCounts)
+
+    def _objective_upper_bound(self) -> float:
+        return (
+            self.instance.sorted_edges[0].distance if self.instance.sorted_edges else 0.0
+        ) * 10
+
+    def _recompute_objective(self) -> None:
+        self.objectiveValue = self._objective_upper_bound()
+        self.minDistanceVertex1 = -1
+        self.minDistanceVertex2 = -1
+        if len(self.selectedVertices) < 2:
+            return
+
+        for index, vertex1 in enumerate(self.selectedVertices):
+            for vertex2 in self.selectedVertices[index + 1 :]:
+                distance = self.instance.distances[vertex1][vertex2]
+                if distance < self.objectiveValue:
+                    self.objectiveValue = distance
+                    self.minDistanceVertex1 = vertex1
+                    self.minDistanceVertex2 = vertex2
