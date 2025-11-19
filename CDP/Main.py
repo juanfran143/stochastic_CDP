@@ -178,13 +178,14 @@ def deterministic_multi_start(
     start = time.process_time()
 
     while time.process_time() - start < test_case.max_time:
-        candidate_solution, candidate_list = heuristic.construct_biased_capacity_solution()
-        candidate_solution, _ = tabu_search_capacity(
-            candidate_solution,
-            candidate_list,
-            test_case.max_iterations,
-            heuristic,
-        )
+        candidate_solution, candidate_list, feasible = heuristic.construct_biased_capacity_solution()
+        if feasible:
+            candidate_solution, _ = tabu_search_capacity(
+                candidate_solution,
+                candidate_list,
+                test_case.max_iterations,
+                heuristic,
+            )
 
         # Maximin Distance is the primary objective, maximize it
         if candidate_solution.objectiveValue > best_solution.objectiveValue + 1e-9:
@@ -193,6 +194,8 @@ def deterministic_multi_start(
 
     if best_solution.time == 0.0:
         best_solution.time = time.process_time() - start
+    if not feasible:
+        best_solution.objectiveValue = -1
 
     return best_solution
 
@@ -206,14 +209,16 @@ def execute_test_case(test_case: TestCase, epsilon: int, instance: Instance) -> 
         test_case.weight,
     )
 
-    solution, candidate_list = heuristic.construct_biased_capacity_solution()
-
-    solution, candidate_list = tabu_search_capacity(
-        solution,
-        candidate_list,
-        test_case.max_iterations,
-        heuristic,
-    )
+    solution, candidate_list, feasible = heuristic.construct_biased_capacity_solution()
+    if feasible:
+        solution, candidate_list = tabu_search_capacity(
+            solution,
+            candidate_list,
+            test_case.max_iterations,
+            heuristic,
+        )
+    if not feasible:
+        solution.objectiveValue = -1
 
     return deterministic_multi_start(solution, test_case, heuristic)
 

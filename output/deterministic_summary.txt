@@ -1,2 +1,0 @@
-Instance	beta_ls	seed	cost	time	capacity	weight
-GKD-b_11_n50_b02_m5.txt	0.5	0	123.7	0.004261926999999999	4285.0	0.7

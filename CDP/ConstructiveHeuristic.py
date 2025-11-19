@@ -187,8 +187,11 @@ class ConstructiveHeuristic:
     def construct_biased_capacity_solution(self) -> Tuple[Solution, List[WeightedCandidate]]:
         solution = self.initial_solution()
         candidate_list = self.build_weighted_candidate_list(solution)
-
+        feasible = True
         while not solution.is_feasible():
+            if len(candidate_list) == 0:
+                feasible = False
+                break
             position = self.random_index(len(candidate_list), self.beta)
             candidate = candidate_list.pop(position)
             vertex_to_add = candidate.vertex
@@ -206,13 +209,12 @@ class ConstructiveHeuristic:
             if new_colour_count > self.epsilon:
                 continue
 
-
             solution.add_vertex(vertex_to_add)
             self.max_capacity = max(self.max_capacity, self.instance.capacities[candidate.vertex])
             if candidate.distance < solution.objectiveValue:
                 solution.update_objective(candidate.vertex, candidate.nearest_vertex, candidate.distance)
             self.update_weighted_candidate_list(solution, candidate_list, candidate.vertex)
-        return solution, candidate_list
+        return solution, candidate_list, feasible
 
 
 
@@ -287,6 +289,9 @@ class ConstructiveHeuristic:
         self, solution: Solution, candidate_list: List[WeightedCandidate]
     ) -> Solution:
         while not solution.is_feasible():
+            if len(candidate_list) == 0:
+                break
+
             index = self.random_index(len(candidate_list), self.beta_local_search)
             candidate = candidate_list.pop(index)
             vertex_to_add = candidate.vertex
